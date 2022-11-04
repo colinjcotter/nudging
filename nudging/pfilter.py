@@ -15,7 +15,6 @@ class base_filter(object, metaclass=ABCMeta):
     def setup(self, nensemble, model):
         """
         Construct the ensemble
-
         nensemble - number of ensemble members
         model - the model to use
         """
@@ -64,23 +63,28 @@ class bootstrap_filter(base_filter):
 
         # renormalise
         weights = np.exp(-weights)
+        self.sim_weights = weights
         weights /= np.sum(weights)
+        self.normal_weights = weights
         self.ess = 1/np.sum(weights**2)
 
-        s = residual_resampling(weights)
-        for i in range(N):
-            self.new_ensemble[i].assign(self.ensemble[s[i]])
-        for i in range(N):
-            self.ensemble[i].assign(self.new_ensemble[i])
+        ############# Residual_resampling  ##################
+        # s = residual_resampling(weights)
+        # for i in range(N):
+        #     self.new_ensemble[i].assign(self.ensemble[s[i]])
+        # for i in range(N):
+        #     self.ensemble[i].assign(self.new_ensemble[i])
 
 
 class jittertemp_filter(base_filter):
-    def __init__(self, nsteps, noise_shape, n_temp, n_jitt, rho):
+    def __init__(self, nsteps, noise_shape, n_temp, n_jitt, rho,
+                 verbose=False):
         self.nsteps = nsteps
         self.noise_shape = noise_shape
         self.n_temp = n_temp
         self.n_jitt = n_jitt
         self.rho = rho
+        self.verbose=verbose
 
     def setup(self, nensemble, model):
         super().setup(nensemble, model)
@@ -92,13 +96,72 @@ class jittertemp_filter(base_filter):
     def assimilation_step(self, y, log_likelihood):
         N = len(self.ensemble)
         weights = np.zeros(N)
-        old_weights = np.zeros(N)
+        weights[:] = 1/N
+        new_weights = np.zeros(N)
         self.ess = []
+        #self.temp_ess = []
+        #self.jitt_ess = []
+        self.arr_deltheta = []
+        self.arr_theta = []
+        self.pre_ess = []
+        self.check_ess = []
         W = np.random.randn(N, *(self.noise_shape))
-        for k in range(self.n_temp): #  Tempering loop
+        Wnew = np.zeros(W.shape)
+
+        theta = 0
+        del_theta = 1 - theta
+        while theta < 1:
+
+            # put result of forward model into new_ensemble
+            for i in range(N):
+                self.model.run(self.nsteps, W[i, :],
+                               self.ensemble[i], self.new_ensemble[i])
+                Y = self.model.obs(self.new_ensemble[i])
+                weights[i] = exp(-del_theta*log_likelihood(y-Y))
+            weights /= np.sum(weights)
+            self.e_weight = weights
+            self.ess = 1/np.sum(weights**2)
+            self.pre_ess.append(self.ess)
+
+            while self.ess < 0.8*N:
+                del_theta /= 2
+                self.arr_deltheta.append(del_theta)
+                for i in range(N):
+                    weights[i] = exp(-del_theta*log_likelihood(y-Y))
+                weights /= np.sum(weights)
+                self.d_weight = weights
+                self.ess = 1/np.sum(weights**2)
+                self.check_ess.append(self.ess)
+
+            for i in range(N):
+                weights[i] = exp(-del_theta*log_likelihood(y-Y))
+            weights /= np.sum(weights)
+
+            theta += del_theta
+            self.arr_theta.append(theta)
+            #self.e_deltheta = del_theta
+
+            # resampling BEFORE jittering
+            s = residual_resampling(weights)
+            self.e_s = s
+            if self.verbose:
+                print("Updating ensembles")
+            for i in range(N):
+                self.new_ensemble[i].assign(self.ensemble[s[i]])
+                Wnew[i, :] = W[s[i], :]
+            for i in range(N):
+                self.ensemble[i].assign(self.new_ensemble[i])
+                W[i, :] = Wnew[i, :]
+                
+            
+
+
             for l in range(self.n_jitt): # Jittering loop
+                if self.verbose:
+                    print("Jitter, Temper step", l, theta)
                 # proposal
                 Wnew = self.rho*W + (1-self.rho**2)**0.5*np.random.randn(N, *(self.noise_shape))
+
                 # forward model step
                 for i in range(N):
                     # put result of forward model into new_ensemble
@@ -107,30 +170,24 @@ class jittertemp_filter(base_filter):
         
                     # particle weights
                     Y = self.model.obs(self.new_ensemble[i])
-                    weights[i] = (1/self.n_temp)*log_likelihood(y-Y)
+                    new_weights[i] = exp(-theta*log_likelihood(y-Y))
                     if l == 0:
-                        old_weights[i] = weights[i]
+                        weights[i] = new_weights[i]
                     else:
                         #  Metropolis MCMC
-                        p_accept = min(1, np.exp(-weights[i])/ np.exp(-old_weights[i]))
+                        p_accept = min(1, new_weights[i]/weights[i])
                         #accept or reject tool
                         if np.random.rand() < p_accept:
-                            old_weights[i] = weights[i]
+                            weights[i] = new_weights[i]
                             W[i,:] = Wnew[i,:]
-            
-                weights = np.exp(-weights)
+
                 weights /= np.sum(weights)
                 self.e_weight = weights
-                self.ess.append(1/np.sum(weights**2))
-            # resampling after jittering
-            s = residual_resampling(weights)
-            self.e_s = s
-            for i in range(N):
-                self.new_ensemble[i].assign(self.ensemble[s[i]])
-                Wnew[i, :] = W[s[i], :]
-            for i in range(N):
-                self.ensemble[i].assign(self.new_ensemble[i])
-                W[i, :] = Wnew[i, :]
+                #self.jitt_ess.append(1/np.sum(weights**2))
 
+        if self.verbose:
+            print("Advancing ensemble")
         self.model.run(self.nsteps, W[i, :],
                                    self.ensemble[i], self.ensemble[i])
+        if self.verbose:
+            print("assimilation step complete")

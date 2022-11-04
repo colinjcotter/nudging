@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 model = Camsholm(100)
 x, = SpatialCoordinate(model.mesh) 
 
-bfilter = jittertemp_filter(5, (5, 4), n_temp=5, n_jitt=5, rho=0.46)
-nensemble = 40
+bfilter = jittertemp_filter(5, (5, 10), n_temp=5, n_jitt=5, rho=0.995)
+nensemble = 5
 bfilter.setup(nensemble, model)
 
 dx0 = Constant(0.)
@@ -34,12 +34,12 @@ def log_likelihood(dY):
     return np.dot(dY, dY)/0.1**2
     
 #Load data
-N_obs = 25
+N_obs = 5
 y_exact = np.load('y_true.npy')
-plt.plot(y_exact[:,10], 'r-', label='Y_true')
+#plt.plot(y_exact[:,10], 'r-', label='Y_true')
 
 y = np.load('y_obs.npy') 
-
+#plt.plot(y[:,10], 'b-', label='Y_true')
 y_e = np.zeros((N_obs, nensemble, y.shape[1]))
 y_e_mean = np.zeros((N_obs, nensemble))
 
@@ -48,13 +48,29 @@ print(y_e.shape)
 # do assimiliation step
 for k in range(N_obs):
     bfilter.assimilation_step(y[k,:], log_likelihood)
+    #print(k)
+    #print(bfilter.ess)
+    #print('del_theta:', bfilter.arr_deltheta)
+    #print('theta:', bfilter.arr_theta)
+    print('e_weight ', bfilter.e_weight)
+    print('pre_ess ', bfilter.pre_ess)
+    #print('d_weight: ', bfilter.d_weight)
+    print('check_ess: ', bfilter.check_ess)
     for e in range(nensemble):
         y_e[k,e,:] = model.obs(bfilter.ensemble[e])
+# print(bfilter.temp_ess)
+# print(bfilter.jitt_ess)
 
-y_e_mean = np.mean(y_e[:,:,10], axis=1)
+# plt.plot(bfilter.ess, label='N_ess')
+# plt.title('Tempering ess: Camassa-Holm equation with N_ensemble = ' +str(nensemble))
+# plt.legend()
+# plt.show()
 
-plt.plot(y_e[:,:,10], 'y-')
-plt.plot(y_e_mean, 'g-', label='Y_ensemble_mean')
-plt.legend()
-plt.title('Ensemble prediction with N_ensemble = ' +str(nensemble))
-plt.show()
+
+# y_e_mean = np.mean(y_e[:,:,10], axis=1)
+
+# plt.plot(y_e[:,:,10], 'y-')
+# plt.plot(y_e_mean, 'g-', label='Y_ensemble_mean')
+# plt.legend()
+# plt.title('Ensemble prediction with N_ensemble = ' +str(nensemble))
+# plt.show()

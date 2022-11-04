@@ -18,8 +18,8 @@ x, = SpatialCoordinate(model.mesh)
 u0.interpolate(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+exp(-x+203./15.)))
 
 dt = 0.01
-nsteps = 25 
-N_obs = 5  
+nsteps = 5 
+N_obs = 5
 DT = nsteps*dt 
 nobs_step = nsteps*N_obs 
 
@@ -28,7 +28,7 @@ y_obs_full = np.zeros((N_obs, np.size(y_true)))
 y_true_full = np.zeros((N_obs, np.size(y_true)))
 
 for i in range(N_obs):
-    W_truth = np.random.randn(nsteps, 4)
+    W_truth = np.random.randn(nsteps, 10)
     model.run(nsteps, W_truth, X_truth, X_truth)
     y_true = model.obs(X_truth)
 
