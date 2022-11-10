@@ -15,6 +15,7 @@ class base_filter(object, metaclass=ABCMeta):
     def setup(self, nensemble, model):
         """
         Construct the ensemble
+
         nensemble - number of ensemble members
         model - the model to use
         """
@@ -63,17 +64,14 @@ class bootstrap_filter(base_filter):
 
         # renormalise
         weights = np.exp(-weights)
-        self.sim_weights = weights
         weights /= np.sum(weights)
-        self.normal_weights = weights
         self.ess = 1/np.sum(weights**2)
 
-        ############# Residual_resampling  ##################
-        # s = residual_resampling(weights)
-        # for i in range(N):
-        #     self.new_ensemble[i].assign(self.ensemble[s[i]])
-        # for i in range(N):
-        #     self.ensemble[i].assign(self.new_ensemble[i])
+        s = residual_resampling(weights)
+        for i in range(N):
+            self.new_ensemble[i].assign(self.ensemble[s[i]])
+        for i in range(N):
+            self.ensemble[i].assign(self.new_ensemble[i])
 
 
 class jittertemp_filter(base_filter):
@@ -93,53 +91,40 @@ class jittertemp_filter(base_filter):
         for i in range(self.nensemble):
             self.new_ensemble.append(self.model.allocate())
 
-    def assimilation_step(self, y, log_likelihood):
+    def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
         N = len(self.ensemble)
         weights = np.zeros(N)
+        self.e_wight = np.zeros(N)
         weights[:] = 1/N
         new_weights = np.zeros(N)
-        self.ess = []
-        #self.temp_ess = []
-        #self.jitt_ess = []
-        self.arr_deltheta = []
-        self.arr_theta = []
-        self.pre_ess = []
-        self.check_ess = []
+        self.sim_ess = []
+        self.ess_temper = []
+        self.theta_temper = []
         W = np.random.randn(N, *(self.noise_shape))
         Wnew = np.zeros(W.shape)
-
-        theta = 0
-        del_theta = 1 - theta
-        while theta < 1:
-
-            # put result of forward model into new_ensemble
+        
+        theta = .0
+        while theta <1.: #  Tempering loop
+            dtheta = 1.0 - theta
+            # forward model step
             for i in range(N):
+                # put result of forward model into new_ensemble
                 self.model.run(self.nsteps, W[i, :],
                                self.ensemble[i], self.new_ensemble[i])
-                Y = self.model.obs(self.new_ensemble[i])
-                weights[i] = exp(-del_theta*log_likelihood(y-Y))
-            weights /= np.sum(weights)
-            self.e_weight = weights
-            self.ess = 1/np.sum(weights**2)
-            self.pre_ess.append(self.ess)
-
-            while self.ess < 0.8*N:
-                del_theta /= 2
-                self.arr_deltheta.append(del_theta)
+            ess = 0.
+            while ess < ess_tol*N:
                 for i in range(N):
-                    weights[i] = exp(-del_theta*log_likelihood(y-Y))
+                    Y = self.model.obs(self.new_ensemble[i])
+                    weights[i] = exp(-dtheta*log_likelihood(y-Y))
                 weights /= np.sum(weights)
-                self.d_weight = weights
-                self.ess = 1/np.sum(weights**2)
-                self.check_ess.append(self.ess)
-
-            for i in range(N):
-                weights[i] = exp(-del_theta*log_likelihood(y-Y))
-            weights /= np.sum(weights)
-
-            theta += del_theta
-            self.arr_theta.append(theta)
-            #self.e_deltheta = del_theta
+                self.e_wight = weights
+                ess = 1/np.sum(weights**2)
+                self.sim_ess.append(ess)
+                if ess < ess_tol*N:
+                    dtheta = 0.5*dtheta
+            self.ess_temper.append(ess)
+            theta += dtheta
+            self.theta_temper.append(theta)
 
             # resampling BEFORE jittering
             s = residual_resampling(weights)
@@ -153,12 +138,9 @@ class jittertemp_filter(base_filter):
                 self.ensemble[i].assign(self.new_ensemble[i])
                 W[i, :] = Wnew[i, :]
                 
-            
-
-
             for l in range(self.n_jitt): # Jittering loop
                 if self.verbose:
-                    print("Jitter, Temper step", l, theta)
+                    print("Jitter, Temper step", l, k)
                 # proposal
                 Wnew = self.rho*W + (1-self.rho**2)**0.5*np.random.randn(N, *(self.noise_shape))
 
@@ -183,7 +165,6 @@ class jittertemp_filter(base_filter):
 
                 weights /= np.sum(weights)
                 self.e_weight = weights
-                #self.jitt_ess.append(1/np.sum(weights**2))
 
         if self.verbose:
             print("Advancing ensemble")

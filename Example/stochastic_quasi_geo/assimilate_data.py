@@ -13,7 +13,7 @@ x = SpatialCoordinate(model.mesh)
 
 #bfilter = bootstrap_filter(5, (5, 10))
 bfilter = jittertemp_filter(5, (5, 10), n_temp=20, n_jitt=5, rho=0.99)
-nensemble = 10
+nensemble = 5
 bfilter.setup(nensemble, model)
 
 dx0 = Constant(0.)
@@ -38,41 +38,35 @@ def log_likelihood(dY):
     return np.dot(dY, dY)/0.1**2
     
 #Load data
-N_obs = 10
-q_num_ex = np.load('q_true.npy')
-#plt.plot(q_num_ex[5,:], 'r-', label='q_true')
+
+#N_obs = 10
+q_exact= np.load('q_true.npy')
+N_obs = q_exact.shape[0]
+
+station_view = 5
+plt.plot(q_exact[:,station_view], 'r-', label='q_true')
 
 q = np.load('q_obs.npy') 
-#plt.plot(q[5,:], 'b-', label='q_obs')
+
 q_e = np.zeros((N_obs, nensemble, q.shape[1]))
 q_e_mean = np.zeros((N_obs, nensemble))
 
-print(q_e.shape)
-Ess = []
+
+
 # do assimiliation step
 for k in range(N_obs):
     bfilter.assimilation_step(q[k,:], log_likelihood)
     print(k)
-    #Ess.append(bfilter.ess)
-    print(bfilter.pre_ess)
+    print('theta:', bfilter.theta_temper)
+    print('Temp_ess:', bfilter.ess_temper)
     for e in range(nensemble):
         q_e[k,e,:] = model.obs(bfilter.ensemble[e])
 
-# print(bfilter.e_theta)
-# print(bfilter.ess)
-# #print(bfilter.normal_weights)
-# #print(bfilter.jitt_ess)
-# print(Ess)
-#jitt_ess_txt = np.savetxt("jitt_ess"+str(bfilter.n_temp)+".txt", bfilter.jitt_ess)
-# plt.plot(Ess, label='N_ess')
-# plt.title(' Ess: Quasi-Geostrophic equation with N_ensemble = ' +str(nensemble))
-# plt.legend()
-# plt.show()
 
-#q_e_mean = np.mean(q_e[5,:,:], axis=1)
+q_e_mean = np.mean(q_e[:,:,station_view], axis=1)
 
-# plt.plot(q_e[5,:,:], 'y-')
-# plt.plot(q_e_mean, 'g-', label='q_ensemble_mean')
-# plt.legend()
-# plt.title('Ensemble prediction with N_ensemble = ' +str(nensemble))
-# plt.show()
+plt.plot(q_e[:,:,station_view], 'y-')
+plt.plot(q_e_mean, 'g-', label='q_ensemble_mean')
+plt.legend()
+plt.title('Ensemble prediction with N_ensemble = ' +str(nensemble))
+plt.show()
