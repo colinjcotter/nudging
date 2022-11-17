@@ -83,10 +83,10 @@ class Camsholm(base_model):
         self.w0.assign(X0)
         self.msolve.solve()
         for step in range(nsteps):
-            self.dW1.assign(W[step, 0])
-            self.dW2.assign(W[step, 1])
-            self.dW3.assign(W[step, 2])
-            self.dW4.assign(W[step, 3])
+            self.dW1.assign(W[4*step])
+            self.dW2.assign(W[4*step+1])
+            self.dW3.assign(W[4*step+2])
+            self.dW4.assign(W[4*step+3])
 
             self.usolver.solve()
             self.w0.assign(self.w1)

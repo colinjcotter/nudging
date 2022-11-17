@@ -5,7 +5,7 @@ from nudging import *
 import numpy as np
 """
 create some synthetic data/observation data at T_1 ---- T_Nobs
-Pick initial conditon
+Pick initial condition
 run model, get obseravation
 add observation noise N(0, sigma^2)
 """
@@ -23,8 +23,11 @@ y_true = model.obs(X_truth)
 y_obs_full = np.zeros((N_obs, np.size(y_true)))
 y_true_full = np.zeros((N_obs, np.size(y_true)))
 
+W_truth = []
+for i in range(nsteps*4):
+    W_truth.append(Constant(np.random.randn()))
+
 for i in range(N_obs):
-    W_truth = np.random.randn(nsteps, 4)
     model.run(nsteps, W_truth, X_truth, X_truth)
     y_true = model.obs(X_truth)
 
