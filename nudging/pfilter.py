@@ -185,14 +185,14 @@ class bootstrap_filter(base_filter):
 
 class jittertemp_filter(base_filter):
     def __init__(self, n_temp, n_jitt, rho,
-                 verbose=False, MALA=False, visualise_tape=False):
+                 verbose=False, MALA=False, visualise_tape=None):
         self.n_temp = n_temp
         self.n_jitt = n_jitt
         self.rho = rho
         self.verbose=verbose
         self.MALA = MALA
         self.model_taped = False
-        self.visualise_tape = visualise_tape
+        self.visualise_tape = visualise_tape # filename to output tape graph
 
     def setup(self, nensemble, model, resampler_seed=34343):
         super(jittertemp_filter, self).setup(
@@ -281,10 +281,12 @@ class jittertemp_filter(base_filter):
                             #requires log_likelihood to return symbolic
                             Y = self.model.obs()
                             self.MALA_J = assemble(log_likelihood(y,Y))
-                            self.Jhat = ReducedFunctional(self.MALA_J, self.m)
+                            self.Jhat = ReducedFunctional(self.MALA_J, self.m,
+                                                          derivative_components=
+                                                          range(1,len(self.m)-1))
                             if self.visualise_tape:
                                 tape = pyadjoint.get_working_tape()
-                                tape.visualise_pdf("t.pdf")
+                                tape.visualise_pdf(self.visualise_tape)
                             pyadjoint.tape.pause_annotation()
 
                         # run the model and get the functional value with ensemble[i]

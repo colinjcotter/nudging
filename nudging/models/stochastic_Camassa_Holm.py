@@ -23,7 +23,7 @@ class Camsholm(base_model):
         self.V = FunctionSpace(self.mesh, "CG", 1)
         self.W = MixedFunctionSpace((self.V, self.V))
         self.w0 = Function(self.W)
-        self.m0, self.u0 = self.w0.split()       
+        self.m0, self.u0 = self.w0.subfunctions       
 
         #Interpolate the initial condition
 
@@ -90,8 +90,8 @@ class Camsholm(base_model):
         self.usolver = NonlinearVariationalSolver(self.uprob, solver_parameters={'mat_type': 'aij', 'ksp_type': 'preonly','pc_type': 'lu'})
 
         # Data save
-        self.m0, self.u0 = self.w0.split()
-        self.m1, self.u1 = self.w1.split()
+        self.m0, self.u0 = self.w0.subfunctions
+        self.m1, self.u1 = self.w1.subfunctions
 
         # state for controls
         self.X = self.allocate()
@@ -130,7 +130,7 @@ class Camsholm(base_model):
         return controls_list
         
     def obs(self):
-        m, u = self.w0.split()
+        m, u = self.w0.subfunctions
         Y = Function(self.VVOM)
         Y.interpolate(u)
         return Y

@@ -33,7 +33,7 @@ for i in range(nensemble[jtfilter.ensemble_rank]):
     u0_exp = (1+a)*0.2*2/(exp(x-403./15. + dx0) + exp(-x+403./15. + dx0)) \
         + (1+b)*0.5*2/(exp(x-203./15. + dx1)+exp(-x+203./15. + dx1))
 
-    _, u = jtfilter.ensemble[i][0].split()
+    _, u = jtfilter.ensemble[i][0].subfunctions
     u.interpolate(u0_exp)
 
 
