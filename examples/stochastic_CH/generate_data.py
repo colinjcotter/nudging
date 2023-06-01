@@ -17,7 +17,7 @@ xpoints = 40
 model = Camsholm(100, nsteps, xpoints)
 model.setup()
 X_truth = model.allocate()
-_, u0 = X_truth[0].subfunctions
+_, u0 = X_truth[0].split()
 x, = SpatialCoordinate(model.mesh)
 u0.interpolate(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+exp(-x+203./15.)))
 

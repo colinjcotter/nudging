@@ -130,7 +130,7 @@ class Camsholm(base_model):
         return controls_list
         
     def obs(self):
-        m, u = self.w0.subfunctions
+        m, u = self.w0.split()
         Y = Function(self.VVOM)
         Y.interpolate(u)
         return Y
