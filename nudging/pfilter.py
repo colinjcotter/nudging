@@ -82,8 +82,11 @@ class base_filter(object, metaclass=ABCMeta):
             weights = self.weight_arr.data()
             # renormalise
             weights = np.exp(-dtheta*weights)
+            #PETSc.Sys.Print('weights ', weights )
             weights /= np.sum(weights)
+            #PETSc.Sys.Print('W:', weights)
             self.ess = 1/np.sum(weights**2)
+            PETSc.Sys.Print('ESS', self.ess)
 
         # compute resampling protocol on rank 0
         if self.ensemble_rank == 0:
@@ -95,6 +98,7 @@ class base_filter(object, metaclass=ABCMeta):
         self.s_arr.synchronise()
         s_copy = self.s_arr.data()
         self.s_copy = s_copy
+        #print('s list', self.s_copy)
 
         mpi_requests = []
         
@@ -185,14 +189,13 @@ class bootstrap_filter(base_filter):
 
 class jittertemp_filter(base_filter):
     def __init__(self, n_temp, n_jitt, rho,
-                 verbose=False, MALA=False, visualise_tape=False):
+                 verbose=False, MALA=False):
         self.n_temp = n_temp
         self.n_jitt = n_jitt
         self.rho = rho
         self.verbose=verbose
         self.MALA = MALA
         self.model_taped = False
-        self.visualise_tape = visualise_tape
 
     def setup(self, nensemble, model, resampler_seed=34343):
         super(jittertemp_filter, self).setup(
@@ -282,9 +285,8 @@ class jittertemp_filter(base_filter):
                             Y = self.model.obs()
                             self.MALA_J = assemble(log_likelihood(y,Y))
                             self.Jhat = ReducedFunctional(self.MALA_J, self.m)
-                            if self.visualise_tape:
-                                tape = pyadjoint.get_working_tape()
-                                tape.visualise_pdf("t.pdf")
+                            tape = pyadjoint.get_working_tape()
+                            tape.visualise_pdf("t.pdf")
                             pyadjoint.tape.pause_annotation()
 
                         # run the model and get the functional value with ensemble[i]
@@ -328,6 +330,204 @@ class jittertemp_filter(base_filter):
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
 
+        if self.verbose:
+            PETSc.Sys.Print("Advancing ensemble")
+        self.model.run(self.ensemble[i], self.ensemble[i])
+        if self.verbose:
+            PETSc.Sys.Print("assimilation step complete")
+
+
+# only implement nudging algorithm here
+class nudging_filter(base_filter):
+
+    def __init__(self, n_temp, n_jitt, rho,
+                 verbose=False, MALA=False):
+        self.n_temp = n_temp
+        self.n_jitt = n_jitt
+        self.rho = rho
+        self.verbose=verbose
+        self.MALA = MALA
+        self.model_taped = False
+    
+    def setup(self, nensemble, model, resampler_seed=34343):
+        super(nudging_filter, self).setup(nensemble, model, resampler_seed)
+        # Owned array for sending dtheta
+        self.dtheta_arr = OwnedArray(size = self.nglobal, dtype=float,
+                                     comm=self.subcommunicators.ensemble_comm,
+                                     owner=0)
+
+
+
+    def adaptive_dtheta(self, dtheta, theta, ess_tol):
+        N = self.nensemble[self.ensemble_rank]
+        dtheta_list = []
+        ttheta_list = []
+        ess_list = []
+        esstheta_list = []
+        ttheta = 0
+        self.weight_arr.synchronise(root=0)
+        if self.ensemble_rank == 0:
+            logweights = self.weight_arr.data()
+            ess =0.
+            while ess < ess_tol*sum(self.nensemble):
+                # renormalise using dtheta
+                weights = np.exp(-dtheta*logweights)
+                weights /= np.sum(weights)
+                ess = 1/np.sum(weights**2)
+                if ess < ess_tol*sum(self.nensemble):
+                    dtheta = 0.5*dtheta
+            # abuse owned array to broadcast dtheta
+            for i in range(self.nglobal):
+                self.dtheta_arr[i]=dtheta
+
+        # broadcast dtheta to every rank
+        self.dtheta_arr.synchronise()
+        dtheta = self.dtheta_arr.data()[0]
+        theta += dtheta
+        return dtheta
+
+    def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
+        N = self.nensemble[self.ensemble_rank]
+        weights = np.zeros(N)
+        new_weights = np.zeros(N)
+        self.ess_temper = []
+        self.theta_temper = []
+
+        for i in range(N):
+            if not self.model_taped:
+                self.model_taped = False
+                pyadjoint.tape.continue_annotation()
+                #print('insidenudge')
+                # run and obs the model without noise
+                self.model.run(self.ensemble[i],self.new_ensemble[i])
+                #print(len(self.ensemble[i]))
+                Y = self.model.obs()
+                # set the control
+                self.lmbda = self.model.controls()+ [Control(y)]
+                #print(len(self.lmbda))    
+                # add the likelihood and Girsanov factor 
+                self.weight_J_fn = assemble(log_likelihood(y,Y))+self.model.lambda_functional_1()
+                lmbda_indices = tuple(i  for i in range(len(self.lmbda)))
+                self.J_fnhat = ReducedFunctional(self.weight_J_fn, self.lmbda, derivative_components= lmbda_indices)
+                pyadjoint.tape.pause_annotation()
+
+            print('Before', self.ensemble_rank, norm(self.ensemble[i])) 
+
+            for j in range(4*self.model.nsteps):
+                self.ensemble[i][j].assign(0)
+
+            #lambda_opt = minimize(self.J_fnhat, options={"disp": True})
+            lambda_opt = minimize(self.J_fnhat)
+
+            valuebeforemin = self.J_fnhat(self.ensemble[i]+[y])
+            # update  lambda_opt in the ensemble members
+            for j in range(4*self.model.nsteps):
+                self.ensemble[i][j].assign(lambda_opt[j])
+
+            valueafteremin = self.J_fnhat(self.ensemble[i]+[y])
+
+            print(i, valuebeforemin, valueafteremin, 'ensemblemember', 'before', 'after')
+             # Add first Girsanov factor 
+            self.weight_arr.dlocal[i] = self.model.lambda_functional_1()
+            # radomize ensemble with noise terms
+            self.model.randomize(self.ensemble[i],Constant(0),Constant(1))
+            self.weight_arr.dlocal[i] += self.model.lambda_functional_2(lambda_opt)
+
+            for j in range(4*self.model.nsteps):
+                self.ensemble[i][j].assign(lambda_opt[j])
+
+            # run and obs method with updated noise and lambda_opt
+            self.model.run(self.ensemble[i], self.new_ensemble[i])   
+            print('After', self.ensemble_rank, norm(self.new_ensemble[i])) 
+            Y = self.model.obs()
+            self.weight_arr.dlocal[i] += assemble(log_likelihood(y,Y))
+        #resampling method
+        #self.parallel_resample()
+
+        theta = 0.
+        while theta <1.: #  Tempering loop
+            dtheta = 1.0 - theta
+
+            self.weight_arr.dlocal[i] = self.model.lambda_functional_1()
+            self.weight_arr.dlocal[i] += self.model.lambda_functional_2(lambda_opt)
+            self.model.run(self.ensemble[i], self.new_ensemble[i])    
+            Y = self.model.obs()
+            self.weight_arr.dlocal[i] += assemble(log_likelihood(y,Y))
+
+            # adaptive dtheta choice
+            dtheta = self.adaptive_dtheta(dtheta, theta,  ess_tol)
+            theta += dtheta
+            self.theta_temper.append(theta)
+            if self.verbose:
+                PETSc.Sys.Print("theta", theta, "dtheta", dtheta)
+
+            # resampling BEFORE jittering
+            self.parallel_resample()
+
+            for l in range(self.n_jitt): # Jittering loop
+                if self.verbose:
+                    PETSc.Sys.Print("Jitter, Temper step", l, k) 
+                # forward model step
+                for i in range(N):
+                    if self.MALA:
+                        if not self.model_taped:
+                            self.model_taped = True
+                            pyadjoint.tape.continue_annotation()
+                            self.model.run(self.ensemble[i],
+                                           self.new_ensemble[i])
+                            #set the controls
+                            if type(y) == Function:
+                                self.m = self.model.controls() + [Control(y)]
+                            else:
+                                self.m = self.model.controls()
+                            #requires log_likelihood to return symbolic
+                            Y = self.model.obs()
+                            self.MALA_J = assemble(log_likelihood(y,Y))
+                            self.Jhat = ReducedFunctional(self.MALA_J, self.m)
+                            tape = pyadjoint.get_working_tape()
+                            tape.visualise_pdf("t.pdf")
+                            pyadjoint.tape.pause_annotation()
+                        # run the model and get the functional value with ensemble[i]
+                        self.Jhat(self.ensemble[i]+[y])
+                        # use the taped model to get the derivative
+                        g = self.Jhat.derivative()
+                        # proposal
+                        self.model.copy(self.ensemble[i],
+                                        self.proposal_ensemble[i])
+                        self.model.randomize(self.proposal_ensemble[i],
+                                             Constant((2-self.rho)/(2+self.rho)),
+                                             Constant((8*self.rho)**0.5/(2+self.rho)),
+                                             gscale=Constant(-2*self.rho/(2+self.rho)),g=g)
+                    else:
+                        # proposal PCN
+                        self.model.copy(self.ensemble[i],
+                                        self.proposal_ensemble[i])
+                        self.model.randomize(self.proposal_ensemble[i],
+                                             self.rho,
+                                             (1-self.rho**2)**0.5)
+                    # put result of forward model into new_ensemble
+                    self.model.run(self.proposal_ensemble[i],
+                                   self.new_ensemble[i])
+                    # particle weights
+                    Y = self.model.obs()
+                    girsanov_weight = self.model.lambda_functional_1()+self.model.lambda_functional_2(lambda_opt)
+                    new_weights[i] = exp(-theta*(assemble(log_likelihood(y,Y))+girsanov_weight))
+                    #accept reject of MALA and Jittering 
+                    if l == 0:
+                        weights[i] = new_weights[i]
+                    else:
+                        # Metropolis MCMC
+                        if self.MALA:
+                            p_accept = 1
+                        else:
+                            p_accept = min(1, new_weights[i]/weights[i])
+                        # accept or reject tool
+                        u = self.model.rg.uniform(self.model.R, 0., 1.0)
+                        if u.dat.data[:] < p_accept:
+                            #print(p_accept)
+                            weights[i] = new_weights[i]
+                            self.model.copy(self.proposal_ensemble[i],
+                                            self.ensemble[i])
         if self.verbose:
             PETSc.Sys.Print("Advancing ensemble")
         self.model.run(self.ensemble[i], self.ensemble[i])
