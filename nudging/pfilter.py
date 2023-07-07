@@ -234,8 +234,8 @@ class jittertemp_filter(base_filter):
         
     def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
         N = self.nensemble[self.ensemble_rank]
-        weights = np.zeros(N)
-        new_weights = np.zeros(N)
+        potentials = np.zeros(N)
+        new_potentials = np.zeros(N)
         self.ess_temper = []
         self.theta_temper = []
 
@@ -266,10 +266,10 @@ class jittertemp_filter(base_filter):
                     PETSc.Sys.Print("Jitter, Temper step", l, self.n_jitt)
 
                 if l == 0:
-                    # particle weights for jittering
+                    # particle potentials for jittering
                     Y = self.model.obs()
-                    weights[i] = exp(-theta*assemble(log_likelihood(y,Y)))
-                    
+                    potentials[i] = assemble(log_likelihood(y,Y))
+
                 # forward model step
                 for i in range(N):
                     if self.MALA:
@@ -298,14 +298,17 @@ class jittertemp_filter(base_filter):
                         self.Jhat(self.ensemble[i]+[y])
                         # use the taped model to get the derivative
                         g = self.Jhat.derivative()
-                        # proposal
+                        # proposal MALA
+                        # we assume that the random variables are mean zero, variance 1.
                         self.model.copy(self.ensemble[i],
-
                                         self.proposal_ensemble[i])
                         self.model.randomize(self.proposal_ensemble[i],
                                              Constant((2-self.delta)/(2+self.delta)),
                                              Constant((8*self.delta)**0.5/(2+self.delta)),
                                              gscale=Constant(-2*self.delta/(2+self.delta)),g=g)
+                        # get the new derivative
+                        self.Jhat(self.proposal_ensemble[i]+[y])
+                        new_g = self.Jhat.derivative()
                     else:
                         # proposal PCN
                         self.model.copy(self.ensemble[i],
@@ -317,21 +320,24 @@ class jittertemp_filter(base_filter):
                     self.model.run(self.proposal_ensemble[i],
                                    self.new_ensemble[i])
 
-                    # particle weights
+                    # particle potentials
                     Y = self.model.obs()
-                    new_weights[i] = exp(-theta*assemble(log_likelihood(y,Y)))
+                    new_potentials[i] = assemble(log_likelihood(y,Y))
                     #accept reject of MALA and Jittering 
                     if self.MALA:
-                        p_accept = 1
+                        rho_uv, rho_vu = self.model.rhos_MALA(potentials[i],
+                                                              new_potentials[i],
+                                                              g, new_g, theta)
+                        p_accept = exp(rho_uv - rho_vu)
                     else:
                         # Metropolis MCMC
-                        p_accept = min(1, new_weights[i]/weights[i])
+                        p_accept = min(1, exp(theta*(potentials[i]-new_potentials[i])))
                     # accept or reject
                     u = self.model.rg.uniform(self.model.R, 0., 1.0)
                     if u.dat.data[:] < p_accept:
                         if self.verbose:
                             PETSc.Sys.Print("Accept", u.dat.data[:], p_accept)
-                            weights[i] = new_weights[i]
+                            potentials[i] = new_potentials[i]
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
                         else:
