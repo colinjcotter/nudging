@@ -16,7 +16,7 @@ xpoints = 40
 model = Camsholm(100, nsteps, xpoints)
 MALA = True
 verbose = True
-jtfilter = jittertemp_filter(n_temp=4, n_jitt = 4, rho= 0.99,
+jtfilter = jittertemp_filter(n_temp=4, n_jitt = 4, delta= 0.1,
                              verbose=verbose, MALA=MALA)
 
 nensemble = [5,5,5,5]

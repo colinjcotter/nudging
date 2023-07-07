@@ -184,11 +184,11 @@ class bootstrap_filter(base_filter):
 
 
 class jittertemp_filter(base_filter):
-    def __init__(self, n_temp, n_jitt, rho,
+    def __init__(self, n_temp, n_jitt, delta,
                  verbose=False, MALA=False, visualise_tape=None):
         self.n_temp = n_temp
         self.n_jitt = n_jitt
-        self.rho = rho
+        self.delta = delta # MCMC stepsize
         self.verbose=verbose
         self.MALA = MALA
         self.model_taped = False
@@ -260,10 +260,15 @@ class jittertemp_filter(base_filter):
 
             # resampling BEFORE jittering
             self.parallel_resample()
-
+            
             for l in range(self.n_jitt): # Jittering loop
                 if self.verbose:
-                    PETSc.Sys.Print("Jitter, Temper step", l, k)
+                    PETSc.Sys.Print("Jitter, Temper step", l, self.n_jitt)
+
+                if l == 0:
+                    # particle weights for jittering
+                    Y = self.model.obs()
+                    weights[i] = exp(-theta*assemble(log_likelihood(y,Y)))
                     
                 # forward model step
                 for i in range(N):
@@ -295,18 +300,19 @@ class jittertemp_filter(base_filter):
                         g = self.Jhat.derivative()
                         # proposal
                         self.model.copy(self.ensemble[i],
+
                                         self.proposal_ensemble[i])
                         self.model.randomize(self.proposal_ensemble[i],
-                                             Constant((2-self.rho)/(2+self.rho)),
-                                             Constant((8*self.rho)**0.5/(2+self.rho)),
-                                             gscale=Constant(-2*self.rho/(2+self.rho)),g=g)
+                                             Constant((2-self.delta)/(2+self.delta)),
+                                             Constant((8*self.delta)**0.5/(2+self.delta)),
+                                             gscale=Constant(-2*self.delta/(2+self.delta)),g=g)
                     else:
                         # proposal PCN
                         self.model.copy(self.ensemble[i],
                                         self.proposal_ensemble[i])
                         self.model.randomize(self.proposal_ensemble[i],
-                                             self.rho,
-                                             (1-self.rho**2)**0.5)
+                                             (1-self.delta**2)**0.5,
+                                             self.delta)
                     # put result of forward model into new_ensemble
                     self.model.run(self.proposal_ensemble[i],
                                    self.new_ensemble[i])
@@ -315,20 +321,22 @@ class jittertemp_filter(base_filter):
                     Y = self.model.obs()
                     new_weights[i] = exp(-theta*assemble(log_likelihood(y,Y)))
                     #accept reject of MALA and Jittering 
-                    if l == 0:
-                        weights[i] = new_weights[i]
+                    if self.MALA:
+                        p_accept = 1
                     else:
                         # Metropolis MCMC
-                        if self.MALA:
-                            p_accept = 1
-                        else:
-                            p_accept = min(1, new_weights[i]/weights[i])
-                        # accept or reject tool
-                        u = self.model.rg.uniform(self.model.R, 0., 1.0)
-                        if u.dat.data[:] < p_accept:
+                        p_accept = min(1, new_weights[i]/weights[i])
+                    # accept or reject
+                    u = self.model.rg.uniform(self.model.R, 0., 1.0)
+                    if u.dat.data[:] < p_accept:
+                        if self.verbose:
+                            PETSc.Sys.Print("Accept", u.dat.data[:], p_accept)
                             weights[i] = new_weights[i]
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
+                        else:
+                            if self.verbose:
+                                PETSc.Sys.Print("Reject", u.dat.data[:], p_accept)
 
         if self.verbose:
             PETSc.Sys.Print("Advancing ensemble")

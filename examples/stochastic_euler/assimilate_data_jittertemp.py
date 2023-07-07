@@ -17,7 +17,7 @@ model = Euler_SD(n, nsteps=nsteps)
 
 MALA = True
 verbose = True
-jtfilter = jittertemp_filter(n_temp=4, n_jitt = 4, rho= 0.99,
+jtfilter = jittertemp_filter(n_temp=4, n_jitt = 4, delta= 0.1,
                             verbose=verbose, MALA=MALA)
 # Load data
 u_exact = np.load('u_true_data.npy')
