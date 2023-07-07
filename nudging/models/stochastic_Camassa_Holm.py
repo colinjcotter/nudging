@@ -24,7 +24,9 @@ class Camsholm(base_model):
         self.W = MixedFunctionSpace((self.V, self.V))
         self.w0 = Function(self.W)
         self.m0, self.u0 = self.w0.subfunctions       
-
+        
+        One = Function(self.V).assign(1.0)
+        self.Area = assemble(One*dx)
         #Interpolate the initial condition
 
         #Solve for the initial condition for m.

@@ -325,10 +325,7 @@ class jittertemp_filter(base_filter):
                     new_potentials[i] = assemble(log_likelihood(y,Y))
                     #accept reject of MALA and Jittering 
                     if self.MALA:
-                        rho_uv, rho_vu = self.model.rhos_MALA(potentials[i],
-                                                              new_potentials[i],
-                                                              g, new_g, theta)
-                        p_accept = exp(rho_uv - rho_vu)
+                        p_accept = 1
                     else:
                         # Metropolis MCMC
                         p_accept = min(1, exp(theta*(potentials[i]-new_potentials[i])))
