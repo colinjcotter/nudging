@@ -69,6 +69,25 @@ class base_model(object, metaclass=ABCMeta):
         """
         pass
 
+        @abstractmethod
+
+        rho_uv, rho_vu = self.model.rhos_MALA(potentials[i],
+                                              new_potentials[i],
+                                              g, new_g, theta)
+
+
+    def rhos_MALA(self, phiu, phiv, g, newg, theta=1)
+        """
+        input phiu: potential for the old variable
+        input phiv: potential for the new variable
+        input g: derivative of potential for the old variable
+        input newg: derivative of potential for the new variable
+        input theta: scaling parameter
+
+        returns rho_uv: rho(u, v)
+        returns rho_vu: rho(v, u)
+        """
+        pass
 
     @cached_property
     def R(self):
