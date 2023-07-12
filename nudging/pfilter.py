@@ -80,6 +80,8 @@ class base_filter(object, metaclass=ABCMeta):
         self.weight_arr.synchronise(root=0)
         if self.ensemble_rank == 0:
             weights = self.weight_arr.data()
+            #PETSc.Sys.Print('Min:', min(weights), 'Max:', max(weights))
+            #PETSc.Sys.Print(weights)
             # renormalise
             weights = np.exp(-dtheta*weights)
             #PETSc.Sys.Print('weights ', weights )
@@ -305,8 +307,8 @@ class jittertemp_filter(base_filter):
                         self.model.copy(self.ensemble[i],
                                         self.proposal_ensemble[i])
                         self.model.randomize(self.proposal_ensemble[i],
-                                             self.rho,
-                                             (1-self.rho**2)**0.5)
+                                              (1-self.rho**2)**0.5,
+                                               self.rho)
                     # put result of forward model into new_ensemble
                     self.model.run(self.proposal_ensemble[i],
                                    self.new_ensemble[i])
@@ -326,6 +328,7 @@ class jittertemp_filter(base_filter):
                         # accept or reject tool
                         u = self.model.rg.uniform(self.model.R, 0., 1.0)
                         if u.dat.data[:] < p_accept:
+                            #PETSc.Sys.Print('Ratio:', p_accept)
                             weights[i] = new_weights[i]
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
@@ -411,7 +414,7 @@ class nudging_filter(base_filter):
                 self.J_fnhat = ReducedFunctional(self.weight_J_fn, self.lmbda, derivative_components= lmbda_indices)
                 pyadjoint.tape.pause_annotation()
 
-            print('Before', self.ensemble_rank, norm(self.ensemble[i])) 
+            #print('Before', self.ensemble_rank, norm(Y)) 
 
             for j in range(4*self.model.nsteps):
                 self.ensemble[i][j].assign(0)
@@ -426,7 +429,7 @@ class nudging_filter(base_filter):
 
             valueafteremin = self.J_fnhat(self.ensemble[i]+[y])
 
-            print(i, valuebeforemin, valueafteremin, 'ensemblemember', 'before', 'after')
+            #print(i, valuebeforemin, valueafteremin, 'ensemblemember', 'before', 'after')
              # Add first Girsanov factor 
             self.weight_arr.dlocal[i] = self.model.lambda_functional_1()
             # radomize ensemble with noise terms
@@ -438,8 +441,9 @@ class nudging_filter(base_filter):
 
             # run and obs method with updated noise and lambda_opt
             self.model.run(self.ensemble[i], self.new_ensemble[i])   
-            print('After', self.ensemble_rank, norm(self.new_ensemble[i])) 
+            
             Y = self.model.obs()
+            #print('After', self.ensemble_rank, norm(Y)) 
             self.weight_arr.dlocal[i] += assemble(log_likelihood(y,Y))
         #resampling method
         #self.parallel_resample()

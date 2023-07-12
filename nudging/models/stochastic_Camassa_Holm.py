@@ -84,7 +84,7 @@ class Camsholm(base_model):
         self.X = self.allocate()
 
         # vertex only mesh for observations
-        x_obs = np.arange(0.5,self.xpoints)
+        x_obs = np.linspace(0.5,39.5, self.xpoints)
         x_obs_list = []
         for i in x_obs:
             x_obs_list.append([i])
