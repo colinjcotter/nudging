@@ -507,8 +507,8 @@ class nudging_filter(base_filter):
                         self.model.copy(self.ensemble[i],
                                         self.proposal_ensemble[i])
                         self.model.randomize(self.proposal_ensemble[i],
-                                             self.rho,
-                                             (1-self.rho**2)**0.5)
+                                             (1-self.rho**2)**0.5,
+                                             self.rho)
                     # put result of forward model into new_ensemble
                     self.model.run(self.proposal_ensemble[i],
                                    self.new_ensemble[i])
