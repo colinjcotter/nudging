@@ -83,8 +83,8 @@ class base_filter(object, metaclass=ABCMeta):
             #PETSc.Sys.Print('Min:', min(weights), 'Max:', max(weights))
             #PETSc.Sys.Print(weights)
             # renormalise
+            weights -= np.mean(weights)
             weights = np.exp(-dtheta*weights)
-            #PETSc.Sys.Print('weights ', weights )
             weights /= np.sum(weights)
             #PETSc.Sys.Print('W:', weights)
             self.ess = 1/np.sum(weights**2)
@@ -363,11 +363,6 @@ class nudging_filter(base_filter):
 
     def adaptive_dtheta(self, dtheta, theta, ess_tol):
         N = self.nensemble[self.ensemble_rank]
-        dtheta_list = []
-        ttheta_list = []
-        ess_list = []
-        esstheta_list = []
-        ttheta = 0
         self.weight_arr.synchronise(root=0)
         if self.ensemble_rank == 0:
             logweights = self.weight_arr.data()
@@ -400,55 +395,45 @@ class nudging_filter(base_filter):
             if not self.model_taped:
                 self.model_taped = False
                 pyadjoint.tape.continue_annotation()
-                #print('insidenudge')
-                # run and obs the model without noise
                 self.model.run(self.ensemble[i],self.new_ensemble[i])
-                #print(len(self.ensemble[i]))
                 Y = self.model.obs()
-                # set the control
                 self.lmbda = self.model.controls()+ [Control(y)]
-                #print(len(self.lmbda))    
-                # add the likelihood and Girsanov factor 
                 self.weight_J_fn = assemble(log_likelihood(y,Y))+self.model.lambda_functional_1()
-                lmbda_indices = tuple(i  for i in range(len(self.lmbda)))
+                lmbda_indices = tuple(i  for i in range(1,len(self.lmbda)-1))
                 self.J_fnhat = ReducedFunctional(self.weight_J_fn, self.lmbda, derivative_components= lmbda_indices)
                 pyadjoint.tape.pause_annotation()
 
-            #print('Before', self.ensemble_rank, norm(Y)) 
 
-            for j in range(4*self.model.nsteps):
-                self.ensemble[i][j].assign(0)
+            self.J_fnhat(self.ensemble[i]+[y])
+            # g = self.J_fnhat.derivative()
+            # for j in range(len(g)-1):
+            #     PETSc.Sys.Print('Before, Lmabda_opt, g', i, j, norm(self.ensemble[i][j]), norm(g[j]))
 
-            #lambda_opt = minimize(self.J_fnhat, options={"disp": True})
-            lambda_opt = minimize(self.J_fnhat)
+            lambda_opt =  minimize(self.J_fnhat)
+            for j in range(len(lambda_opt)):
+                PETSc.Sys.Print('Lmabda_opt, g', i, j, norm(lambda_opt[j]))
 
-            valuebeforemin = self.J_fnhat(self.ensemble[i]+[y])
-            # update  lambda_opt in the ensemble members
-            for j in range(4*self.model.nsteps):
-                self.ensemble[i][j].assign(lambda_opt[j])
+            for j in range(len(self.ensemble[i])):
+                if j != 0:
+                    self.ensemble[i][j].assign(lambda_opt[j])
 
-            valueafteremin = self.J_fnhat(self.ensemble[i]+[y])
+            #self.model.run(self.ensemble[i], self.new_ensemble[i])
+            #Z = self.model.obs().dat.data[:]
+            #PETSc.Sys.Print('rank',self.ensemble_rank,  'manual', Z)
 
-            #print(i, valuebeforemin, valueafteremin, 'ensemblemember', 'before', 'after')
-             # Add first Girsanov factor 
+            # Add first Girsanov factor 
             self.weight_arr.dlocal[i] = self.model.lambda_functional_1()
             # radomize ensemble with noise terms
-            self.model.randomize(self.ensemble[i],Constant(0),Constant(1))
-            self.weight_arr.dlocal[i] += self.model.lambda_functional_2(lambda_opt)
-
-            for j in range(4*self.model.nsteps):
-                self.ensemble[i][j].assign(lambda_opt[j])
-
+            #self.model.randomize(self.ensemble[i],Constant(1),Constant(1))
+            self.weight_arr.dlocal[i] += self.model.lambda_functional_2(lambda_opt, self.ensemble_rank)
             # run and obs method with updated noise and lambda_opt
             self.model.run(self.ensemble[i], self.new_ensemble[i])   
-            
             Y = self.model.obs()
-            #print('After', self.ensemble_rank, norm(Y)) 
             self.weight_arr.dlocal[i] += assemble(log_likelihood(y,Y))
         #resampling method
-        #self.parallel_resample()
+        self.parallel_resample()
 
-        theta = 0.
+        theta = 1.
         while theta <1.: #  Tempering loop
             dtheta = 1.0 - theta
 

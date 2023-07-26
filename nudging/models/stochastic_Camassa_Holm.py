@@ -4,7 +4,7 @@ from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from nudging.model import *
 import numpy as np
-
+print = PETSc.Sys.Print
 class Camsholm(base_model):
     def __init__(self, n, nsteps, xpoints, dt = 0.01, alpha=1.0, seed=12353):
 
@@ -137,7 +137,7 @@ class Camsholm(base_model):
         for i in range(self.nsteps):
             for j in range(4):
                 count += 1
-                X[count].assign(c1*X[count] + c2*rg.normal(self.R, 0., 2.0))    
+                X[count].assign(c1*X[count] + c2*rg.normal(self.R, 0.0, 1.0))    
                 if g:
                     X[count] += gscale*g[count]
 
@@ -147,24 +147,29 @@ class Camsholm(base_model):
             dW2 = self.X[4*step+2]
             dW3 = self.X[4*step+3]
             dW4 = self.X[4*step+4]
+            print('Step, lambda_1, dW', step, assemble(dW1*dx)/40, assemble(dW2*dx)/40,
+                                     assemble(dW3*dx)/40, assemble(dW4*dx)/40)
             if step == 0:
-               lambda_func = 0.5*(dW1**2+dW2**2+dW3**2+dW4**2)*dx
+               lambda_func = 0.5*self.sqrt_dt*(dW1**2+dW2**2+dW3**2+dW4**2)*dx
             else:
-                lambda_func += 0.5*(dW1**2+dW2**2+dW3**2+dW4**2)*dx
+                lambda_func += 0.5*self.sqrt_dt*(dW1**2+dW2**2+dW3**2+dW4**2)*dx
         return assemble(lambda_func)/40
     
-    def lambda_functional_2(self, lambda_opt):
+    def lambda_functional_2(self, lambda_opt, ensemble_rank = None):
         for step in range(self.nsteps):
             dW1 = self.X[4*step+1]
             dW2 = self.X[4*step+2]
             dW3 = self.X[4*step+3]
             dW4 = self.X[4*step+4]
+            print('Rank, Step, lambda_2, dW', ensemble_rank, step, assemble(dW1*dx)/40, assemble(dW2*dx)/40,
+                                     assemble(dW3*dx)/40, assemble(dW4*dx)/40)
 
             dl1 = lambda_opt[4*step+1]
             dl2 = lambda_opt[4*step+2]
             dl3 = lambda_opt[4*step+3]
             dl4 = lambda_opt[4*step+4]
-
+            print('Rank, Step, lambda_2, dl', ensemble_rank, step, assemble(dl1*dx)/40, assemble(dl2*dx)/40,
+                                     assemble(dl3*dx)/40, assemble(dl4*dx)/40)
             if step == 0:
                lambda_func = -(dW1*dl1+dW2*dl2+dW3*dl3+dW4*dl4)*dx # sort out dt
             else:
