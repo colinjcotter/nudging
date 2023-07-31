@@ -245,10 +245,7 @@ class jittertemp_filter(base_filter):
         self.theta_temper = []
 
         theta = .0
-        while theta <1.: #  Tempering loop
-            dtheta = 1.0 - theta
-            # forward model step
-            for i in range(N):
+        for i in range(N):
                 # generate the initial noise variables
                 self.model.randomize(self.ensemble[i])
                 # put result of forward model into new_ensemble
@@ -256,6 +253,8 @@ class jittertemp_filter(base_filter):
                 Y = self.model.obs()
                 self.weight_arr.dlocal[i] = assemble(log_likelihood(y,Y))
 
+        while theta <1.: #  Tempering loop
+            dtheta = 1.0 - theta
             # adaptive dtheta choice
             dtheta = self.adaptive_dtheta(dtheta, theta,  ess_tol)
             theta += dtheta
@@ -264,7 +263,7 @@ class jittertemp_filter(base_filter):
                 PETSc.Sys.Print("theta", theta, "dtheta", dtheta)
 
             # resampling BEFORE jittering
-            self.parallel_resample()
+            self.parallel_resample(dtheta)
 
             for l in range(self.n_jitt): # Jittering loop
                 if self.verbose:
@@ -451,7 +450,7 @@ class nudging_filter(base_filter):
                 PETSc.Sys.Print("theta", theta, "dtheta", dtheta)
 
             # resampling BEFORE jittering
-            self.parallel_resample()
+            self.parallel_resample(dtheta)
 
             for l in range(self.n_jitt): # Jittering loop
                 if self.verbose:
