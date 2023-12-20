@@ -324,10 +324,10 @@ class jittertemp_filter(base_filter):
                                         "local ensemble member ", i)
                     self.Jhat[step].derivative()
                     if i == 0:
-                        Xopt = fd.minimize(self.Jhat[step],
+                        Xopt = fadj.minimize(self.Jhat[step],
                                            options={"disp": False})
                     else:
-                        Xopt = fd.minimize(self.Jhat[step])
+                        Xopt = fadj.minimize(self.Jhat[step])
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(
                         Xopt[nsteps+1+step])
