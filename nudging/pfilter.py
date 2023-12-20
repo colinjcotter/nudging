@@ -325,7 +325,7 @@ class jittertemp_filter(base_filter):
                     self.Jhat[step].derivative()
                     if i == 0:
                         Xopt = fadj.minimize(self.Jhat[step],
-                                           options={"disp": False})
+                                             options={"disp": False})
                     else:
                         Xopt = fadj.minimize(self.Jhat[step])
                     # place the optimal value of lambda into ensemble
