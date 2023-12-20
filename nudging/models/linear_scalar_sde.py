@@ -15,6 +15,7 @@ class LGModel(base_model):
         self.nsteps = nsteps
         self.lambdas = lambdas
         self.dt = dt
+        self.seed = seed
 
     def setup(self, comm=MPI.COMM_WORLD):
         self.mesh = fd.UnitIntervalMesh(2, comm=comm)
