@@ -139,3 +139,10 @@ def filter_linear_sde(testfilter, filterargs):
 @pytest.mark.parallel(nprocs=5)
 def test_bsfilter():
     filter_linear_sde(bootstrap_filter(), {"residual": False})
+
+
+@pytest.mark.parallel(nprocs=10)
+def test_jtfilter():
+    jtfilter = jittertemp_filter(n_jitt=5, delta=0.15,
+                                 verbose=False, MALA=False)
+    filter_linear_sde(jtfilter, {"residual": False})
