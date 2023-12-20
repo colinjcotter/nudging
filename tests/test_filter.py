@@ -1,10 +1,12 @@
 from firedrake import dx, exp
-from nudging import LSDEModel, bootstrap_filter, SharedArray
+from nudging import LSDEModel, bootstrap_filter, SharedArray, \
+    jittertemp_filter
 import numpy as np
 import pytest
 
 
-def filter_linear_sde(testfilter, filterargs, mtol, vtol):
+def filter_linear_sde(testfilter, filterargs, mtol, vtol,
+                      p_per_rank, nranks):
 
     # model
     # multiply by A and add D
@@ -82,7 +84,7 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol):
     # then
     # x(1)|y ~ N((b^2y + S^2a)/(b^2+S^2), (b^2S^2)/(b^2 + S^2))
 
-    nensemble = [200]*5
+    nensemble = [p_per_rank]*nranks
     filterargs["nensemble"] = nensemble
     filterargs["model"] = model
     testfilter.setup(**filterargs)
@@ -139,7 +141,8 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol):
 @pytest.mark.parallel(nprocs=5)
 def test_bsfilter():
     filter_linear_sde(bootstrap_filter(), {"residual": False},
-                      mtol=0.005, vtol=0.005)
+                      mtol=0.005, vtol=0.005,
+                      p_per_rank=200, nranks=5)
 
 
 @pytest.mark.parallel(nprocs=10)
@@ -147,4 +150,5 @@ def test_jtfilter():
     jtfilter = jittertemp_filter(n_jitt=5, delta=0.15,
                                  verbose=False, MALA=False)
     filter_linear_sde(jtfilter, {"residual": False},
-                      mtol=0.015, vtol=0.08)
+                      mtol=0.015, vtol=0.08,
+                      p_per_rank=10, nranks=10)
