@@ -6,8 +6,7 @@ import pytest
 
 
 def filter_linear_sde(testfilter, filterargs, mtol, vtol,
-                      p_per_rank, nranks):
-
+                      p_per_rank, nranks):  # , lambdas=False):
     # model
     # multiply by A and add D
     T = 1.
@@ -15,7 +14,7 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
     dt = T/nsteps
     A = 1.
     D = 2.
-    model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt)
+    model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt)  #, lambdas=lambdas)
 
     # solving
     # dx = A*x*dt + D*dW
@@ -84,6 +83,7 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
     # then
     # x(1)|y ~ N((b^2y + S^2a)/(b^2+S^2), (b^2S^2)/(b^2 + S^2))
 
+    print(p_per_rank, nranks)
     nensemble = [p_per_rank]*nranks
     filterargs["nensemble"] = nensemble
     filterargs["model"] = model
@@ -151,4 +151,5 @@ def test_jtfilter():
                                  verbose=False, MALA=False)
     filter_linear_sde(jtfilter, {"residual": False},
                       mtol=0.015, vtol=0.08,
-                      p_per_rank=10, nranks=10)
+                      p_per_rank=10, nranks=10,
+                      lambdas=True)
