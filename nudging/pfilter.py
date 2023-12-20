@@ -250,7 +250,7 @@ class jittertemp_filter(base_filter):
         theta += dtheta
         return dtheta
 
-    def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
+    def assimilation_step(self, y, log_likelihood, ess_tol=0.5):
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
