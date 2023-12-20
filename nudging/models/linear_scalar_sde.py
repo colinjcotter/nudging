@@ -1,4 +1,5 @@
 import firedrake as fd
+import firedrake.adjoint as fadj
 from nudging import base_model
 from pyop2.mpi import MPI
 
@@ -37,19 +38,21 @@ class LSDEModel(base_model):
             self.X[i].assign(X0[i])
 
         self.u.assign(self.X[0])
+
+        u = self.u
+        dW = self.dW
+        dt = self.dt
+        A = self.A
+
         for step in range(self.nsteps):
-            self.dW.assign(self.X[step+1])
-            u = self.u
-            dW = self.dW
-            dt = self.dt
-            A = self.A
+            dW.assign(self.X[step+1])
             u.assign(u*(1 + dt*A) + dt**0.5*dW)
-        X1[0].assign(u)
+        X1[0].assign(self.u)
 
     def controls(self):
         controls_list = []
         for i in range(len(self.X)):
-            controls_list.append(fd.Control(self.X[i]))
+            controls_list.append(fadj.Control(self.X[i]))
         return controls_list
 
     def obs(self):
