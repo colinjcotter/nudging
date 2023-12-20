@@ -9,6 +9,11 @@ from firedrake.adjoint import pause_annotation, continue_annotation, \
     get_working_tape
 
 
+def logsumexp(x):
+    c = x.max()
+    return c + np.log(np.sum(np.exp(x - c)))
+
+
 class base_filter(object, metaclass=ABCMeta):
     ensemble = []
     new_ensemble = []
@@ -16,7 +21,8 @@ class base_filter(object, metaclass=ABCMeta):
     def __init__(self):
         pass
 
-    def setup(self, nensemble, model, resampler_seed=34343):
+    def setup(self, nensemble, model, resampler_seed=34343,
+              residual=True):
         """
         Construct the ensemble
 
@@ -69,7 +75,7 @@ class base_filter(object, metaclass=ABCMeta):
             self.offset_list.append(sum(self.nensemble[:i_rank]))
         # a resampling method
         self.resampler = residual_resampling(seed=resampler_seed,
-                                             residual=True)
+                                             residual=residual)
 
     def index2rank(self, index):
         for rank in range(len(self.offset_list)):
@@ -88,9 +94,8 @@ class base_filter(object, metaclass=ABCMeta):
             if self.ensemble_rank == 0:
                 potentials = self.potential_arr.data()
                 # renormalise
-                potentials -= np.mean(potentials)
-                weights = np.exp(-dtheta*potentials)
-                weights /= np.sum(weights)
+                weights = np.exp(-dtheta*potentials
+                                 - logsumexp(-dtheta*potentials))
                 self.ess = 1/np.sum(weights**2)
                 if self.verbose:
                     PETSc.Sys.Print("ESS", self.ess)
@@ -177,9 +182,10 @@ class sim_filter(base_filter):
 
 class bootstrap_filter(base_filter):
 
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, residual=False):
         super().__init__()
         self.verbose = verbose
+        self.residual = residual
 
     def assimilation_step(self, y, log_likelihood):
         N = self.nensemble[self.ensemble_rank]
