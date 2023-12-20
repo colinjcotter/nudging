@@ -22,7 +22,7 @@ class base_filter(object, metaclass=ABCMeta):
         pass
 
     def setup(self, nensemble, model, resampler_seed=34343,
-              residual=True):
+              residual=False):
         """
         Construct the ensemble
 
