@@ -3,7 +3,7 @@ from nudging import base_model
 from pyop2.mpi import MPI
 
 
-class LGModel(base_model):
+class LSDEModel(base_model):
     def __init__(self, A, D, nsteps, dt, seed=36353, lambdas=False):
         """
         Discretisation of 1D linear SDE,
