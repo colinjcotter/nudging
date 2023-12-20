@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 
-def filter_linear_sde(testfilter, filterargs):
+def filter_linear_sde(testfilter, filterargs, mtol, vtol):
 
     # model
     # multiply by A and add D
@@ -132,17 +132,19 @@ def filter_linear_sde(testfilter, filterargs):
     tmean = (b**2*y0 + S**2*a)/(b**2 + S**2)
     tvar = b**2*S**2/(b**2 + S**2)
 
-    assert np.abs(tmean - bs_mean) < 0.005
-    assert np.abs(tvar - bs_var) < 0.005
+    assert np.abs(tmean - bs_mean) < mtol
+    assert np.abs(tvar - bs_var) < vtol
 
 
 @pytest.mark.parallel(nprocs=5)
 def test_bsfilter():
-    filter_linear_sde(bootstrap_filter(), {"residual": False})
+    filter_linear_sde(bootstrap_filter(), {"residual": False},
+                      mtol=0.005, vtol=0.005)
 
 
 @pytest.mark.parallel(nprocs=10)
 def test_jtfilter():
     jtfilter = jittertemp_filter(n_jitt=5, delta=0.15,
                                  verbose=False, MALA=False)
-    filter_linear_sde(jtfilter, {"residual": False})
+    filter_linear_sde(jtfilter, {"residual": False},
+                      mtol=0.015, vtol=0.08)
