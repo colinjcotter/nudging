@@ -1,21 +1,23 @@
 import firedrake as fd
 from nudging import base_model
 from pyop2.mpi import MPI
-import numpy as np
 
 
 class LGModel(base_model):
-
-    def __init__(self, n, nsteps, xpoints, scale, seed, lambdas=False):
-        self.n = n
+    def __init__(self, A, D, nsteps, dt, seed=36353, lambdas=False):
+        """
+        Discretisation of 1D linear SDE,
+        dx = A*x*dt + D*dW
+        x(t) + exp(At)*x(0) + int_0^t exp(A(t-s))dW
+        """
+        self.A = A
+        self.D = D
         self.nsteps = nsteps
-        self.seed = seed
-        self.xpoints = xpoints
-        self.A = scale
         self.lambdas = lambdas
+        self.dt = dt
 
     def setup(self, comm=MPI.COMM_WORLD):
-        self.mesh = fd.PeriodicIntervalMesh(self.n, 40.0, comm=comm)
+        self.mesh = fd.UnitIntervalMesh(2, comm=comm)
 
         self.R = fd.FunctionSpace(self.mesh, "R", 0)
         self.u = fd.Function(self.R)
@@ -25,10 +27,7 @@ class LGModel(base_model):
         self.X = self.allocate()
 
         # vertex only mesh for observations
-        x_obs = np.linspace(0, 40, num=self.xpoints, endpoint=False)
-        x_obs_list = []
-        for i in x_obs:
-            x_obs_list.append([i])
+        x_obs_list = [[0.2]]
         self.VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
         self.VVOM = fd.FunctionSpace(self.VOM, "DG", 0)
 
@@ -37,10 +36,9 @@ class LGModel(base_model):
             self.X[i].assign(X0[i])
 
         self.u.assign(self.X[0])
-
         for step in range(self.nsteps):
             self.dW.assign(self.X[step+1])
-            self.u.assign(self.A*self.u + self.dW)
+            self.u.assign(self.A*self.u + self.dt**2*self.dW)
         X1[0].assign(self.u)
 
     def controls(self):
@@ -72,9 +70,9 @@ class LGModel(base_model):
         for i in range(self.nsteps):
             count += 1
             X[count].assign(c1*X[count] + c2*rg.normal(
-                self.R, 0., 0.25))
+                self.R, 0., 1.))
             if g:
                 X[count] += gscale*g[count]
 
     def lambda_functional(self):
-        pass
+        raise NotImplementedError
