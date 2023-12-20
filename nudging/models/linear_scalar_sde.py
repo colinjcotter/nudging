@@ -19,11 +19,12 @@ class LSDEModel(base_model):
         self.seed = seed
 
     def setup(self, comm=MPI.COMM_WORLD):
-        self.mesh = fd.UnitIntervalMesh(2, comm=comm)
+        self.mesh = fd.UnitIntervalMesh(1, comm=comm)
 
         self.R = fd.FunctionSpace(self.mesh, "R", 0)
-        self.u = fd.Function(self.R)
-        self.dW = fd.Function(self.R)
+        self.V = fd.FunctionSpace(self.mesh, "DG", 0)
+        self.u = fd.Function(self.V)
+        self.dW = fd.Function(self.V)
 
         # state for controls
         self.X = self.allocate()
@@ -62,13 +63,13 @@ class LSDEModel(base_model):
         return Y
 
     def allocate(self):
-        particle = [fd.Function(self.R)]
+        particle = [fd.Function(self.V)]
         for i in range(self.nsteps):
-            dW = fd.Function(self.R)
+            dW = fd.Function(self.V)
             particle.append(dW)
         if self.lambdas:
             for i in range(self.nsteps):
-                dW = fd.Function(self.R)
+                dW = fd.Function(self.V)
                 particle.append(dW)
         return particle
 
@@ -78,9 +79,32 @@ class LSDEModel(base_model):
         for i in range(self.nsteps):
             count += 1
             X[count].assign(c1*X[count] + c2*rg.normal(
-                self.R, 0., 1.))
+                self.V, 0., 1.))
             if g:
                 X[count] += gscale*g[count]
 
     def lambda_functional(self):
-        raise NotImplementedError
+        nsteps = self.nsteps
+        dt = self.dt
+
+        # This should have the effect of returning
+        # sum_n sum_i (dt*lambda_i^2/2 -  lambda_i*dW_i)
+        # where dW_i are the contributing Brownian increments
+        # and lambda_i are the corresponding Girsanov variables
+
+        # in the case of our DG0 Gaussian random fields, there
+        # is one per cell, so we can formulate this for UFL in a
+        # volume integral by dividing by cell volume.
+
+        dx = fd.dx
+        for step in range(nsteps):
+            lambda_step = self.X[nsteps + 1 + step]
+            dW_step = self.X[1 + step]
+            cv = fd.CellVolume(self.mesh)
+            dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
+                                 - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
+            if step == 0:
+                lfunc = dlfunc
+            else:
+                lfunc += dlfunc
+        return lfunc

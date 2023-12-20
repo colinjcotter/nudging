@@ -6,7 +6,7 @@ import pytest
 
 
 def filter_linear_sde(testfilter, filterargs, mtol, vtol,
-                      p_per_rank, nranks):  # , lambdas=False):
+                      p_per_rank, nranks, lambdas=False):
     # model
     # multiply by A and add D
     T = 1.
@@ -14,7 +14,7 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
     dt = T/nsteps
     A = 1.
     D = 2.
-    model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt)  #, lambdas=lambdas)
+    model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=lambdas)
 
     # solving
     # dx = A*x*dt + D*dW
@@ -151,5 +151,15 @@ def test_jtfilter():
                                  verbose=False, MALA=False)
     filter_linear_sde(jtfilter, {"residual": False},
                       mtol=0.015, vtol=0.08,
+                      p_per_rank=10, nranks=10)
+
+
+@pytest.mark.parallel(nprocs=10)
+def test_nudgingfilter():
+    jtfilter = jittertemp_filter(n_jitt=5, delta=0.15,
+                                 verbose=False, MALA=False,
+                                 nudging=True)
+    filter_linear_sde(jtfilter, {"residual": False},
+                      mtol=0.1, vtol=0.1,
                       p_per_rank=10, nranks=10,
                       lambdas=True)
