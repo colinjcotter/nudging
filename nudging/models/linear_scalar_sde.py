@@ -39,8 +39,12 @@ class LGModel(base_model):
         self.u.assign(self.X[0])
         for step in range(self.nsteps):
             self.dW.assign(self.X[step+1])
-            self.u.assign(self.A*self.u + self.dt**2*self.dW)
-        X1[0].assign(self.u)
+            u = self.u
+            dW = self.dW
+            dt = self.dt
+            A = self.A
+            u.assign(u*(1 + dt*A) + dt**0.5*dW)
+        X1[0].assign(u)
 
     def controls(self):
         controls_list = []
