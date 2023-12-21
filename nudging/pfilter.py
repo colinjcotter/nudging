@@ -1,5 +1,6 @@
 from abc import ABCMeta, abstractmethod
 import firedrake as fd
+import firedrake.adjoint as fadj
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from .resampling import residual_resampling
@@ -9,6 +10,11 @@ from firedrake.adjoint import pause_annotation, continue_annotation, \
     get_working_tape
 
 
+def logsumexp(x):
+    c = x.max()
+    return c + np.log(np.sum(np.exp(x - c)))
+
+
 class base_filter(object, metaclass=ABCMeta):
     ensemble = []
     new_ensemble = []
@@ -16,7 +22,8 @@ class base_filter(object, metaclass=ABCMeta):
     def __init__(self):
         pass
 
-    def setup(self, nensemble, model, resampler_seed=34343):
+    def setup(self, nensemble, model, resampler_seed=34343,
+              residual=False):
         """
         Construct the ensemble
 
@@ -69,7 +76,7 @@ class base_filter(object, metaclass=ABCMeta):
             self.offset_list.append(sum(self.nensemble[:i_rank]))
         # a resampling method
         self.resampler = residual_resampling(seed=resampler_seed,
-                                             residual=True)
+                                             residual=residual)
 
     def index2rank(self, index):
         for rank in range(len(self.offset_list)):
@@ -88,9 +95,8 @@ class base_filter(object, metaclass=ABCMeta):
             if self.ensemble_rank == 0:
                 potentials = self.potential_arr.data()
                 # renormalise
-                potentials -= np.mean(potentials)
-                weights = np.exp(-dtheta*potentials)
-                weights /= np.sum(weights)
+                weights = np.exp(-dtheta*potentials
+                                 - logsumexp(-dtheta*potentials))
                 self.ess = 1/np.sum(weights**2)
                 if self.verbose:
                     PETSc.Sys.Print("ESS", self.ess)
@@ -177,9 +183,10 @@ class sim_filter(base_filter):
 
 class bootstrap_filter(base_filter):
 
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, residual=False):
         super().__init__()
         self.verbose = verbose
+        self.residual = residual
 
     def assimilation_step(self, y, log_likelihood):
         N = self.nensemble[self.ensemble_rank]
@@ -210,13 +217,14 @@ class jittertemp_filter(base_filter):
                             + "computing the Metropolis correction for MALA."
                             + " Choose a small delta.")
 
-    def setup(self, nensemble, model, resampler_seed=34343):
+    def setup(self, nensemble, model, resampler_seed=34343, residual=False):
         super(jittertemp_filter, self).setup(
-            nensemble, model, resampler_seed=resampler_seed)
+            nensemble, model, resampler_seed=resampler_seed,
+            residual=residual)
         # Owned array for sending dtheta
         ecomm = self.subcommunicators.ensemble_comm
-        self.dtheta_arr = fd.OwnedArray(size=self.nglobal, dtype=float,
-                                        comm=ecomm, owner=0)
+        self.dtheta_arr = OwnedArray(size=self.nglobal, dtype=float,
+                                     comm=ecomm, owner=0)
 
     def adaptive_dtheta(self, dtheta, theta, ess_tol):
         self.potential_arr.synchronise(root=0)
@@ -224,9 +232,9 @@ class jittertemp_filter(base_filter):
             potentials = self.potential_arr.data()
             ess = 0.
             while ess < ess_tol*sum(self.nensemble):
-                # renormalise using dtheta
-                potentials -= np.mean(potentials)
-                weights = np.exp(-dtheta*potentials)
+                # renormalise
+                weights = np.exp(-dtheta*potentials
+                                 - logsumexp(-dtheta*potentials))
                 weights /= np.sum(weights)
                 ess = 1/np.sum(weights**2)
                 if ess < ess_tol*sum(self.nensemble):
@@ -242,7 +250,7 @@ class jittertemp_filter(base_filter):
         theta += dtheta
         return dtheta
 
-    def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
+    def assimilation_step(self, y, log_likelihood, ess_tol=0.5):
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
@@ -261,7 +269,7 @@ class jittertemp_filter(base_filter):
                            self.new_ensemble[0])
             # set the controls
             if isinstance(y, fd.Function):
-                m = self.model.controls() + [fd.Control(y)]
+                m = self.model.controls() + [fadj.Control(y)]
             else:
                 m = self.model.controls()
             # requires log_likelihood to return symbolic
@@ -282,15 +290,15 @@ class jittertemp_filter(base_filter):
                     # we only update lambdas[step] on timestep step
                     cpts = [step]
 
-                    fnl = fd.ReducedFunctional(nudge_J,
-                                               m,
-                                               derivative_components=cpts)
+                    fnl = fadj.ReducedFunctional(nudge_J,
+                                                 m,
+                                                 derivative_components=cpts)
 
                     self.Jhat.append(fnl)
             # functional for MALA
             cpts = [j for j in range(1, nsteps+1)]
-            self.Jhat_dW = fd.ReducedFunctional(MALA_J, m,
-                                                derivative_components=cpts)
+            self.Jhat_dW = fadj.ReducedFunctional(MALA_J, m,
+                                                  derivative_components=cpts)
             if self.visualise_tape:
                 tape = get_working_tape()
                 assert isinstance(self.visualise_tape, str)
@@ -316,10 +324,10 @@ class jittertemp_filter(base_filter):
                                         "local ensemble member ", i)
                     self.Jhat[step].derivative()
                     if i == 0:
-                        Xopt = fd.minimize(self.Jhat[step],
-                                           options={"disp": False})
+                        Xopt = fadj.minimize(self.Jhat[step],
+                                             options={"disp": False})
                     else:
-                        Xopt = fd.minimize(self.Jhat[step])
+                        Xopt = fadj.minimize(self.Jhat[step])
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(
                         Xopt[nsteps+1+step])
@@ -356,7 +364,7 @@ class jittertemp_filter(base_filter):
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
                 if self.verbose:
-                    PETSc.Sys.Print("Jitter, Temper step", jitt_step)
+                    PETSc.Sys.Print("Jitter step", jitt_step)
 
                 # forward model step
                 for i in range(N):
