@@ -70,9 +70,9 @@ class KS(base_model):
         self.rg = RandomGenerator(pcg)
         #normal distribution
         self.amplitude = Constant(0.05)
-        fx = Function(self.V_)
+        self.fx = Function(self.V_)
         #divide coeffs by area of each cell to get w
-        w = fx / self.Area
+        w = self.fx / self.Area
         #we will approximate dW with w*dx
         #now calculate Matern field by solving the PDE with variational form
         #a(u, v) = nu * <v, dW>
@@ -83,7 +83,7 @@ class KS(base_model):
         L_ = (self.U * self.v + k**(-2) * self.U.dx(0) * self.v.dx(0) - nu * self.v * w) * dx
         #solve problem and store it on u
         noiseprob = NonlinearVariationalProblem(L_, self.U)
-        noisesolver = NonlinearVariationalSolver(noiseprob, solver_parameters=
+        self.noisesolver = NonlinearVariationalSolver(noiseprob, solver_parameters=
            {'mat_type': 'aij',
             'ksp_type': 'preonly',
             'pc_type': 'lu'})
@@ -105,7 +105,7 @@ class KS(base_model):
             if self.lambdas:
                 self.fx += self.X[step+1+self.nsteps]*(self.dt)**0.5
 
-            noisesolver.solve()
+            self.noisesolver.solve()
             # advance in time
             self.usolver.solve()
             # copy output to input
