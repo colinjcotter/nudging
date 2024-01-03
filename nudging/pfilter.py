@@ -346,6 +346,9 @@ class jittertemp_filter(base_filter):
             self.model.run(self.ensemble[i], self.new_ensemble[i])
             Y = self.model.obs()
             self.potential_arr.dlocal[i] = fd.assemble(log_likelihood(y, Y))
+            if self.nudging:
+                #print('update nudging initial_ensemble')
+                self.potential_arr.dlocal[i] += self.model.lambda_functional()
 
         theta = .0
         while theta < 1.:  # Tempering loop
@@ -400,6 +403,9 @@ class jittertemp_filter(base_filter):
                     Y = self.model.obs()
                     new_potentials[i] = theta*fd.assemble(
                         log_likelihood(y, Y))
+                    if self.nudging:
+                        #print('update nudging proposal_ensemble')
+                        new_potentials[i] += theta*self.model.lambda_functional()
                     # accept reject of MALA and Jittering
                     if jitt_step == 0:
                         potentials[i] = new_potentials[i]
