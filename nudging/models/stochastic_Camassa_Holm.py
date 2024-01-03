@@ -1,4 +1,5 @@
 import firedrake as fd
+import firedrake.adjoint as fadj
 from pyop2.mpi import MPI
 from nudging.model import base_model
 import numpy as np
@@ -85,15 +86,16 @@ class Camsholm(base_model):
         if self.salt:
             # SALT noise
             v = uh*Dt+dU_3*Dt**0.5
+            L = ((q*u1 + alphasq*q.dx(0)*u1.dx(0) - q*m1)*dx
+                    + (p*(m1-m0) + (p*v.dx(0)*mh - p.dx(0)*v*mh)
+                    + self.mu*Dt*p.dx(0)*mh.dx(0))*dx)
         else:
             # additive noise
             v = uh*Dt
-        L = ((q*u1 + alphasq*q.dx(0)*u1.dx(0) - q*m1)*dx
-             + (p*(m1-m0) + (p*v.dx(0)*mh - p.dx(0)*v*mh)
-                + self.mu*Dt*p.dx(0)*mh.dx(0))*dx)
-
-        if self.salt:
-            L += p*dU_3*Dt**0.5*dx
+            L = ((q*u1 + alphasq*q.dx(0)*u1.dx(0) - q*m1)*dx
+                    + (p*(m1-m0) + (p*v.dx(0)*mh - p.dx(0)*v*mh)
+                    + self.mu*Dt*p.dx(0)*mh.dx(0))*dx
+                    +p*dU_3*Dt**0.5*dx) 
 
         # timestepping solver
         uprob = fd.NonlinearVariationalProblem(L, self.w1)
@@ -144,7 +146,7 @@ class Camsholm(base_model):
     def controls(self):
         controls_list = []
         for i in range(len(self.X)):
-            controls_list.append(fd.Control(self.X[i]))
+            controls_list.append(fadj.Control(self.X[i]))
         return controls_list
 
     def obs(self):
