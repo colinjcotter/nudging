@@ -258,7 +258,6 @@ class jittertemp_filter(base_filter):
         self.theta_temper = []
         nsteps = self.model.nsteps
 
-        self.temp_count = 0
         # tape the forward model
         if not self.model_taped:
             if self.verbose:
@@ -344,7 +343,6 @@ class jittertemp_filter(base_filter):
         temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta
-            self.temp_count += 1
 
             # Compute initial potentials
             for i in range(N):
@@ -381,8 +379,7 @@ class jittertemp_filter(base_filter):
                         potentials[i] = theta*fd.assemble(
                             log_likelihood(y, Y))
                         if self.nudging:
-                            "needs girsanov correction"
-                            raise NotImplementedError
+                            potentials[i] += self.model.lambda_functional()
 
                     if self.MALA:
                         # run the model and get the functional value with
@@ -417,8 +414,7 @@ class jittertemp_filter(base_filter):
                     new_potentials[i] = theta*fd.assemble(
                         log_likelihood(y, Y))
                     if self.nudging:
-                        "needs girsanov correction"
-                        raise NotImplementedError
+                        potentials[i] += self.model.lambda_functional()
                     # accept reject of MALA and Jittering
                     # Metropolis MCMC
                     if self.MALA:
