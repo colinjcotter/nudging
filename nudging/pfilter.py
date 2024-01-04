@@ -417,8 +417,8 @@ class jittertemp_filter(base_filter):
                     new_potentials[i] = fd.assemble(
                         log_likelihood(y, Y))
                     if self.nudging:
-                        potentials[i] += self.model.lambda_functional()
-                    potentials[i] *= theta
+                        new_potentials[i] += self.model.lambda_functional()
+                    new_potentials[i] *= theta
                     # accept reject of MALA and Jittering
                     # Metropolis MCMC
                     if self.MALA:
