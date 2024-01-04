@@ -51,7 +51,10 @@ class residual_resampling(object):
 
         else:  # systematic resampling
             cumsum_weight = np.cumsum(weights)
-            ensembl_pos = (self.rg.random() + np.arange(N))/N
+            u = self.rg.uniform(self.R, 0., 1.0)
+            u0 = u.dat.data[:]
+
+            ensembl_pos = (u0 + np.arange(N))/N
             s = np.zeros(N, dtype=int)
             i, j = 0, 0
             while i < N:
