@@ -97,6 +97,7 @@ class base_filter(object, metaclass=ABCMeta):
                 # renormalise
                 weights = np.exp(-dtheta*potentials
                                  - logsumexp(-dtheta*potentials))
+                assert np.abs(np.sum(weights)-1) < 1.0e-8
                 self.ess = 1/np.sum(weights**2)
                 if self.verbose:
                     PETSc.Sys.Print("ESS", self.ess)
@@ -340,17 +341,22 @@ class jittertemp_filter(base_filter):
                 # generate the initial noise variables
                 self.model.randomize(self.ensemble[i])
 
-        # Compute initial potentials
-        for i in range(N):
-            # put result of forward model into new_ensemble
-            self.model.run(self.ensemble[i], self.new_ensemble[i])
-            Y = self.model.obs()
-            self.potential_arr.dlocal[i] = fd.assemble(log_likelihood(y, Y))
-
         theta = .0
+        temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta
             self.temp_count += 1
+
+            # Compute initial potentials
+            for i in range(N):
+                # put result of forward model into new_ensemble
+                self.model.run(self.ensemble[i], self.new_ensemble[i])
+                Y = self.model.obs()
+                self.potential_arr.dlocal[i] = \
+                    fd.assemble(log_likelihood(y, Y))
+                if self.nudging:
+                    self.potential_arr.dlocal[i] += \
+                        self.model.lambda_functional()
 
             # adaptive dtheta choice
             dtheta = self.adaptive_dtheta(dtheta, theta, ess_tol)
@@ -361,13 +367,26 @@ class jittertemp_filter(base_filter):
 
             # resampling BEFORE jittering
             self.parallel_resample(dtheta)
+            temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
                 if self.verbose:
                     PETSc.Sys.Print("Jitter step", jitt_step)
 
-                # forward model step
                 for i in range(N):
+                    if jitt_step == 0:
+                        # Compute initial potentials
+                        for i in range(N):
+                            # put result of forward model into new_ensemble
+                            self.model.run(self.ensemble[i],
+                                           self.new_ensemble[i])
+                            Y = self.model.obs()
+                            potentials[i] = theta*fd.assemble(
+                                log_likelihood(y, Y))
+                            if self.nudging:
+                                "needs girsanov correction"
+                                raise NotImplementedError
+
                     if self.MALA:
                         # run the model and get the functional value with
                         # ensemble[i]
@@ -400,17 +419,17 @@ class jittertemp_filter(base_filter):
                     Y = self.model.obs()
                     new_potentials[i] = theta*fd.assemble(
                         log_likelihood(y, Y))
+                    if self.nudging:
+                        "needs girsanov correction"
+                        raise NotImplementedError
                     # accept reject of MALA and Jittering
-                    if jitt_step == 0:
-                        potentials[i] = new_potentials[i]
+                    # Metropolis MCMC
+                    if self.MALA:
+                        p_accept = 1
                     else:
-                        # Metropolis MCMC
-                        if self.MALA:
-                            p_accept = 1
-                        else:
-                            p_accept = min(1,
-                                           np.exp(potentials[i]
-                                                  - new_potentials[i]))
+                        p_accept = min(1,
+                                       np.exp(potentials[i]
+                                              - new_potentials[i]))
                         # accept or reject tool
                         u = self.model.rg.uniform(self.model.R, 0., 1.0)
                         if u.dat.data[:] < p_accept:
@@ -419,6 +438,7 @@ class jittertemp_filter(base_filter):
                                             self.ensemble[i])
 
         if self.verbose:
+            PETSc.Sys.Print(str(temper_count)+" tempering steps")
             PETSc.Sys.Print("Advancing ensemble")
         for i in range(N):
             self.model.run(self.ensemble[i], self.ensemble[i])
