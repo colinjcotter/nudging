@@ -98,6 +98,9 @@ class LSDEModel(base_model):
 
         dx = fd.dx
         for step in range(nsteps):
+            # X[0] is the model state
+            # X[1], .., X[nsteps] are the dWs
+            # X[nsteps+1], .., X[2*nsteps] are the lambdas
             lambda_step = self.X[nsteps + 1 + step]
             dW_step = self.X[1 + step]
             cv = fd.CellVolume(self.mesh)
