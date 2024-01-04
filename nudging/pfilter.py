@@ -100,7 +100,9 @@ class base_filter(object, metaclass=ABCMeta):
                 assert np.abs(np.sum(weights)-1) < 1.0e-8
                 self.ess = 1/np.sum(weights**2)
                 if self.verbose:
-                    PETSc.Sys.Print("ESS", self.ess)
+                    PETSc.Sys.Print("ESS "
+                                    +str(100*self.ess/np.sum(self.nensemble))
+                                    + "%")
 
             # compute resampling protocol on rank 0
                 s = self.resampler.resample(weights, self.model)
@@ -250,7 +252,7 @@ class jittertemp_filter(base_filter):
         dtheta = self.dtheta_arr.data()[0]
         return dtheta
 
-    def assimilation_step(self, y, log_likelihood, ess_tol=0.5):
+    def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
