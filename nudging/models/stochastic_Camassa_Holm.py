@@ -170,7 +170,7 @@ class Camsholm(base_model):
         for i in range(self.nsteps):
             count += 1
             X[count].assign(c1*X[count] + c2*rg.normal(
-                self.W_F, 0., 0.5))
+                self.W_F, 0., 1.))
             if g:
                 X[count] += gscale*g[count]
 
