@@ -376,10 +376,11 @@ class jittertemp_filter(base_filter):
                         self.model.run(self.ensemble[i],
                                        self.new_ensemble[i])
                         Y = self.model.obs()
-                        potentials[i] = theta*fd.assemble(
+                        potentials[i] = fd.assemble(
                             log_likelihood(y, Y))
                         if self.nudging:
                             potentials[i] += self.model.lambda_functional()
+                        potentials[i] *= theta
 
                     if self.MALA:
                         # run the model and get the functional value with
@@ -411,10 +412,11 @@ class jittertemp_filter(base_filter):
 
                     # particle potentials
                     Y = self.model.obs()
-                    new_potentials[i] = theta*fd.assemble(
+                    new_potentials[i] = fd.assemble(
                         log_likelihood(y, Y))
                     if self.nudging:
                         potentials[i] += self.model.lambda_functional()
+                    potentials[i] *= theta
                     # accept reject of MALA and Jittering
                     # Metropolis MCMC
                     if self.MALA:
