@@ -248,7 +248,6 @@ class jittertemp_filter(base_filter):
         # broadcast dtheta to every rank
         self.dtheta_arr.synchronise()
         dtheta = self.dtheta_arr.data()[0]
-        theta += dtheta
         return dtheta
 
     def assimilation_step(self, y, log_likelihood, ess_tol=0.5):
@@ -376,16 +375,14 @@ class jittertemp_filter(base_filter):
                 for i in range(N):
                     if jitt_step == 0:
                         # Compute initial potentials
-                        for i in range(N):
-                            # put result of forward model into new_ensemble
-                            self.model.run(self.ensemble[i],
-                                           self.new_ensemble[i])
-                            Y = self.model.obs()
-                            potentials[i] = theta*fd.assemble(
-                                log_likelihood(y, Y))
-                            if self.nudging:
-                                "needs girsanov correction"
-                                raise NotImplementedError
+                        self.model.run(self.ensemble[i],
+                                       self.new_ensemble[i])
+                        Y = self.model.obs()
+                        potentials[i] = theta*fd.assemble(
+                            log_likelihood(y, Y))
+                        if self.nudging:
+                            "needs girsanov correction"
+                            raise NotImplementedError
 
                     if self.MALA:
                         # run the model and get the functional value with
