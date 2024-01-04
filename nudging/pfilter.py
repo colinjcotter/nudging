@@ -323,12 +323,22 @@ class jittertemp_filter(base_filter):
                     if self.verbose:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
                                         "local ensemble member ", i)
-                    self.Jhat[step].derivative()
+                    g = self.Jhat[step].derivative()
+                    if self.verbose:
+                        for j in range(2*nsteps+1):
+                            PETSc.Sys.Print(j, fd.norm(g[j]), 'g check')
+                        PETSc.Sys.Print(fd.norm(g[j+1]), "Y checks")
                     if i == 0:
                         Xopt = fadj.minimize(self.Jhat[step],
                                              options={"disp": False})
                     else:
                         Xopt = fadj.minimize(self.Jhat[step])
+                    if self.verbose:
+                        for j in range(2*nsteps+1):
+                            PETSc.Sys.Print(fd.norm(Xopt[j]))
+                            PETSc.Sys.Print(j, fd.norm(self.ensemble[i][j]-Xopt[j]),
+                                            "nil checks")
+                        PETSc.Sys.Print(j, fd.norm(y-Xopt[j+1]), "Y checks")
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(
                         Xopt[nsteps+1+step])
