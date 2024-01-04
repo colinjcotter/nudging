@@ -101,7 +101,7 @@ class base_filter(object, metaclass=ABCMeta):
                 self.ess = 1/np.sum(weights**2)
                 if self.verbose:
                     PETSc.Sys.Print("ESS "
-                                    +str(100*self.ess/np.sum(self.nensemble))
+                                    + str(100*self.ess/np.sum(self.nensemble))
                                     + "%")
 
             # compute resampling protocol on rank 0
