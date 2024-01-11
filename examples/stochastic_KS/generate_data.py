@@ -17,9 +17,9 @@ xpoints = 40
 model = KS(100, nsteps, xpoints)
 model.setup()
 X_truth = model.allocate()
-_, u0 = X_truth[0].split()
+u0 = X_truth[0]
 x, = SpatialCoordinate(model.mesh)
-u0.interpolate(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+exp(-x+203./15.)))
+u0.project(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+exp(-x+203./15.)))
 
 N_obs = 50
 

@@ -20,12 +20,13 @@ class KS(base_model):
         self.mesh = PeriodicIntervalMesh(self.n, 40.0, comm = comm)
         self.x, = SpatialCoordinate(self.mesh)
         self.V = FunctionSpace(self.mesh, "HER", 3)
+
+        V_interpolate = FunctionSpace(self.mesh, 'CG', 3)
+        self.u_obs = Function(V_interpolate)
+
         #w at time n-1
         #for the finite difference approximation of the time derivative
         self.w0 = Function(self.V)
-        self.x = SpatialCoordinate(self.mesh)
-        One = Function(self.V).assign(1.0)
-        self.Area = assemble(One*dx)
 
         #initial condition
         self.w0.project(0.2*2/(exp(self.x-403./15.) + exp(-self.x+403./15.))
@@ -44,7 +45,12 @@ class KS(base_model):
         self.dW = self.dt**(1/2)*self.U
 
         #use backward Euler scheme for the variational form with space-time noise
-        L = ((self.w1-self.w0)/self.dt * self.phi + (self.w1.dx(0)).dx(0)*(self.phi.dx(0)).dx(0) - self.w1.dx(0)* self.phi.dx(0) -0.5 * self.w1*self.w1*self.phi.dx(0) + (self.dW*self.phi)) * dx
+        w0 = self.w0
+        w1 = self.w1
+        dt = self.dt
+        L = ((w1-w0) * self.phi + dt*(self.w1.dx(0)).dx(0)* \
+            (self.phi.dx(0)).dx(0) - dt*self.w1.dx(0)* self.phi.dx(0) \
+            -dt*0.5 * self.w1*self.w1*self.phi.dx(0) + (self.dW*self.phi)) * dx
 
         #define a problem and solver over which we will iterate in a loop
         uprob = NonlinearVariationalProblem(L, self.w1)
@@ -70,9 +76,10 @@ class KS(base_model):
         self.rg = RandomGenerator(pcg)
         #normal distribution
         self.amplitude = Constant(0.05)
-        self.fx = Function(self.V_)
+        fx = Function(self.V_)
+        self.fx = fx
         #divide coeffs by area of each cell to get w
-        w = self.fx / self.Area
+        w = fx / (CellVolume(self.mesh)**0.5)
         #we will approximate dW with w*dx
         #now calculate Matern field by solving the PDE with variational form
         #a(u, v) = nu * <v, dW>
@@ -127,7 +134,8 @@ class KS(base_model):
     def obs(self):
         u = self.w0
         Y = Function(self.VVOM)
-        Y.interpolate(u)
+        self.u_obs.interpolate(u)
+        Y.interpolate(self.u_obs)
         return Y
 
     def allocate(self):
