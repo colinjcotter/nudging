@@ -336,8 +336,9 @@ class jittertemp_filter(base_filter):
                     if self.verbose:
                         for j in range(2*nsteps+1):
                             PETSc.Sys.Print(fd.norm(Xopt[j]))
-                            PETSc.Sys.Print(j, fd.norm(self.ensemble[i][j]-Xopt[j]),
-                                            "nil checks")
+                            PETSc.Sys.Print(j, fd.norm(
+                                self.ensemble[i][j]-Xopt[j]),
+                                "nil checks")
                         PETSc.Sys.Print(j, fd.norm(y-Xopt[j+1]), "Y checks")
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(

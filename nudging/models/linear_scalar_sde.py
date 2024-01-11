@@ -103,7 +103,7 @@ class LSDEModel(base_model):
             # X[nsteps+1], .., X[2*nsteps] are the lambdas
             lambda_step = self.X[nsteps + 1 + step]
             dW_step = self.X[1 + step]
-            cv = 1.0 #  should be fd.CellVolume(self.mesh)
+            cv = 1.0  # should be fd.CellVolume(self.mesh)
             # but was breaking the graph
             dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
                                  - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
