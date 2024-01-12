@@ -46,7 +46,11 @@ class LSDEModel(base_model):
         A = self.A
 
         for step in range(self.nsteps):
-            dW.assign(self.X[step+1] + dt**0.5*self.X[self.nsteps+step+1])
+            if self.lambdas:
+                dW.assign(self.X[step+1]
+                          + dt**0.5*self.X[self.nsteps+step+1])
+            else:
+                dW.assign(self.X[step+1])
             u.assign(u*(1 + dt*A) + dt**0.5*dW)
         X1[0].assign(self.u)
 
