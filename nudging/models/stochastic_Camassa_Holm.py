@@ -5,7 +5,7 @@ import numpy as np
 
 
 class Camsholm(base_model):
-    def __init__(self, n, nsteps, xpoints, seed, lambdas=False,
+    def __init__(self, n, nsteps, xpoints, seed=12353, lambdas=False,
                  dt=0.025, alpha=1.0, mu=0.01, salt=False):
 
         self.n = n
@@ -144,7 +144,7 @@ class Camsholm(base_model):
     def controls(self):
         controls_list = []
         for i in range(len(self.X)):
-            controls_list.append(fd.Control(self.X[i]))
+            controls_list.append(fd.adjoint.Control(self.X[i]))
         return controls_list
 
     def obs(self):

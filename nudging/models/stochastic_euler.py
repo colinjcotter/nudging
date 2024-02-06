@@ -147,7 +147,7 @@ class Euler_SD(base_model):
     def controls(self):
         controls_list = []
         for i in range(len(self.X)):
-            controls_list.append(fd.Control(self.X[i]))
+            controls_list.append(fd.adjoint.Control(self.X[i]))
         return controls_list
 
     def obs(self):
