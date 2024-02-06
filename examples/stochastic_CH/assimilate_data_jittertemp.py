@@ -12,7 +12,8 @@ xpoints = 40
 model = ndg.Camsholm(100, nsteps, xpoints)
 MALA = True
 verbose = True
-jtfilter = ndg.jittertemp_filter(n_jitt=4, delta=0.1, verbose=verbose, MALA=MALA)
+jtfilter = ndg.jittertemp_filter(n_jitt=4, delta=0.1, 
+                                 verbose=verbose, MALA=MALA)
 
 nensemble = [5, 5, 5, 5]
 jtfilter.setup(nensemble, model)
