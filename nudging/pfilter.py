@@ -172,6 +172,18 @@ class base_filter(object, metaclass=ABCMeta):
         pass
 
 
+class sim_filter(base_filter):
+
+    def __init__(self):
+        super().__init__()
+
+    def assimilation_step(self, s):
+        for i in range(self.nensemble[self.ensemble_rank]):
+            # set the particle value to the global index
+            self.ensemble[i][0].assign(self.offset_list[self.ensemble_rank]+i)
+        self.parallel_resample(s=s)
+
+
 class bootstrap_filter(base_filter):
 
     def __init__(self, verbose=False, residual=False):
