@@ -172,7 +172,6 @@ class base_filter(object, metaclass=ABCMeta):
         pass
 
 
-
 class bootstrap_filter(base_filter):
 
     def __init__(self, verbose=False, residual=False):
@@ -302,9 +301,9 @@ class jittertemp_filter(base_filter):
                 # zero the noise and lambdas in preparation for nudging
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
-                    self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging        
+                    self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
                 # nudging one step at a time
-                for step in range(nsteps): 
+                for step in range(nsteps):
                     # update with current noise and lambda values
                     self.Jhat[step](self.ensemble[i]+[y])
                     # get the minimum over current lambda
