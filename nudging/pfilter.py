@@ -335,7 +335,7 @@ class jittertemp_filter(base_filter):
                     self.model.randomize(Xopt)  # not efficient!
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(Xopt[1+step])
-            PETSc.garbage_cleanup(PETSc.COMM_SELF) # 
+            PETSc.garbage_cleanup(PETSc.COMM_SELF)
         else:
             for i in range(N):
                 # generate the initial noise variables
