@@ -302,10 +302,9 @@ class jittertemp_filter(base_filter):
                 # zero the noise and lambdas in preparation for nudging
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
-                    self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
+                    self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging        
                 # nudging one step at a time
-                for step in range(nsteps):
-                    PETSc.garbage_cleanup(PETSc.COMM_SELF)
+                for step in range(nsteps): 
                     # update with current noise and lambda values
                     self.Jhat[step](self.ensemble[i]+[y])
                     # get the minimum over current lambda
@@ -336,6 +335,7 @@ class jittertemp_filter(base_filter):
                     self.model.randomize(Xopt)  # not efficient!
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(Xopt[1+step])
+            PETSc.garbage_cleanup(PETSc.COMM_SELF) # 
         else:
             for i in range(N):
                 # generate the initial noise variables
