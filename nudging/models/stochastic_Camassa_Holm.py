@@ -58,7 +58,7 @@ class Camsholm(base_model):
 
         cell_area = fd.CellVolume(self.mesh)
         alpha_w = (1/cell_area**0.5)
-        kappa_inv_sq = 2*cell_area**2
+        kappa_inv_sq = fd.Constant(1.0)
 
         dU_1 = fd.Function(V)
         dU_2 = fd.Function(V)
@@ -92,7 +92,7 @@ class Camsholm(base_model):
              + (p*(m1-m0) + (p*v.dx(0)*mh - p.dx(0)*v*mh)
                 + self.mu*Dt*p.dx(0)*mh.dx(0))*dx)
 
-        if self.salt:
+        if not self.salt:
             L += p*dU_3*Dt**0.5*dx
 
         # timestepping solver
@@ -170,7 +170,7 @@ class Camsholm(base_model):
         for i in range(self.nsteps):
             count += 1
             X[count].assign(c1*X[count] + c2*rg.normal(
-                self.W_F, 0., 0.5))
+                self.W_F, 0., 1.))
             if g:
                 X[count] += gscale*g[count]
 

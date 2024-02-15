@@ -46,7 +46,11 @@ class LSDEModel(base_model):
         A = self.A
 
         for step in range(self.nsteps):
-            dW.assign(self.X[step+1])
+            if self.lambdas:
+                dW.assign(self.X[step+1]
+                          + dt**0.5*self.X[self.nsteps+step+1])
+            else:
+                dW.assign(self.X[step+1])
             u.assign(u*(1 + dt*A) + dt**0.5*dW)
         X1[0].assign(self.u)
 
@@ -98,9 +102,13 @@ class LSDEModel(base_model):
 
         dx = fd.dx
         for step in range(nsteps):
+            # X[0] is the model state
+            # X[1], .., X[nsteps] are the dWs
+            # X[nsteps+1], .., X[2*nsteps] are the lambdas
             lambda_step = self.X[nsteps + 1 + step]
             dW_step = self.X[1 + step]
-            cv = fd.CellVolume(self.mesh)
+            cv = 1.0  # should be fd.CellVolume(self.mesh)
+            # but was breaking the graph
             dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
                                  - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
             if step == 0:

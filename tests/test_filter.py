@@ -150,7 +150,7 @@ def test_jtfilter():
     jtfilter = jittertemp_filter(n_jitt=5, delta=0.15,
                                  verbose=False, MALA=False)
     filter_linear_sde(jtfilter, {"residual": False},
-                      mtol=0.015, vtol=0.08,
+                      mtol=0.05, vtol=0.05,
                       p_per_rank=10, nranks=10)
 
 
@@ -160,6 +160,6 @@ def test_nudgingfilter():
                                  verbose=False, MALA=False,
                                  nudging=True)
     filter_linear_sde(jtfilter, {"residual": False},
-                      mtol=0.1, vtol=0.1,
+                      mtol=0.05, vtol=0.05,
                       p_per_rank=10, nranks=10,
                       lambdas=True)
