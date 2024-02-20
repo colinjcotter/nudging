@@ -70,15 +70,15 @@ class Euler_SD(base_model):
             + dU*dW_phi*dx
         L_w0 = alpha_w*self.dW*dW_phi*dx
         w_prob0 = fd.LinearVariationalProblem(a_dW, L_w0, dU_1, bcs=bcs_dw)
-        self.dw_solver0 = fd.LinearVariationalSolver(w_prob0,
+        self.wsolver0 = fd.LinearVariationalSolver(w_prob0,
                                                      solver_parameters=sp)
         L_w1 = alpha_w*dU_1*dW_phi*dx
         w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_2, bcs=bcs_dw)
-        self.dw_solver1 = fd.LinearVariationalSolver(w_prob1,
+        self.wsolver1 = fd.LinearVariationalSolver(w_prob1,
                                                      solver_parameters=sp)
         L_w = alpha_w*dU_2*dW_phi*dx
         w_prob = fd.LinearVariationalProblem(a_dW, L_w, dU_3, bcs=bcs_dw)
-        self.dw_solver = fd.LinearVariationalSolver(w_prob,
+        self.wsolver = fd.LinearVariationalSolver(w_prob,
                                                     solver_parameters=sp)
         # Add noise with stream function to get stochastic velocity
         Dt = self.dt
