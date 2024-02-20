@@ -38,7 +38,6 @@ class Euler_SD(base_model):
         self.psi0 = fd.Function(self.Vcg)
 
         # Build the weak form for the inversion
-        
         Apsi = (fd.inner(fd.grad(psi), fd.grad(phi)) + psi*phi)*dx
         Lpsi = -self.q1 * phi * dx
 
@@ -52,28 +51,38 @@ class Euler_SD(base_model):
               "pc_factor_mat_solver_type": "mumps"}
         self.psi_solver = fd.LinearVariationalSolver(psi_problem,
                                                      solver_parameters=sp)
+        # Setup noise term using Matern formula
         self.W_F = fd.FunctionSpace(self.mesh, "DG", 0)
         self.dW = fd.Function(self.W_F)
-
         dW_phi = fd.TestFunction(self.Vcg)
-        dw = fd.TrialFunction(self.Vcg)
-        self.alpha_w = fd.CellVolume(self.mesh)
+        dU = fd.TrialFunction(self.Vcg)
 
-        # to store noise data
-        du_w = fd.Function(self.Vcg)
+        cell_area = fd.CellVolume(self.mesh)
+        alpha_w = (1/cell_area**0.5)
+        kappa_inv_sq = fd.Constant(1.0)
+
+        dU_1 = fd.Function(self.Vcg)
+        dU_2 = fd.Function(self.Vcg)
+        dU_3 = fd.Function(self.Vcg)
 
         bcs_dw = fd.DirichletBC(self.Vcg,  fd.zero(), ("on_boundary"))
-        a_dW = fd.inner(fd.grad(dw), fd.grad(dW_phi))*dx + dw*dW_phi*dx
-        L_dW = self.dW*dW_phi*dx
-
-        dW_problem = fd.LinearVariationalProblem(a_dW, L_dW, du_w,
-                                                 bcs=bcs_dw)
-        self.dW_solver = fd.LinearVariationalSolver(dW_problem,
+        a_dW = kappa_inv_sq*fd.inner(fd.grad(dU), fd.grad(dW_phi))*dx \
+            + dU*dW_phi*dx
+        L_w0 = alpha_w*self.dW*dW_phi*dx
+        w_prob0 = fd.LinearVariationalProblem(a_dW, L_w0, dU_1, bcs=bcs_dw)
+        self.dw_solver0 = fd.LinearVariationalSolver(w_prob0,
+                                                     solver_parameters=sp)
+        L_w1 = alpha_w*dU_1*dW_phi*dx
+        w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_2, bcs=bcs_dw)
+        self.dw_solver1 = fd.LinearVariationalSolver(w_prob1,
+                                                     solver_parameters=sp)
+        L_w = alpha_w*dU_2*dW_phi*dx
+        w_prob = fd.LinearVariationalProblem(a_dW, L_w, dU_3, bcs=bcs_dw)
+        self.dw_solver = fd.LinearVariationalSolver(w_prob,
                                                     solver_parameters=sp)
-
         # Add noise with stream function to get stochastic velocity
-        
-        psi_mod = self.psi0+du_w
+        Dt = self.dt
+        psi_mod = self.psi0*Dt+dU_3*Dt**0.5  # SALT noise
 
         def gradperp(u):
             return fd.as_vector((-u.dx(1), u.dx(0)))
@@ -88,10 +97,10 @@ class Euler_SD(base_model):
         Q = fd.Function(self.Vdg)
 
         # timestepping equation
-        a_mass = p*q*dx
-        a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - p*(Q-r*q)) * dx
-        a_flux = (fd.dot(fd.jump(p), un("+") * q("+") - un("-") * q("-"))) * dS
-        arhs = a_mass - self.dt * (a_int + a_flux)
+        a_mass = Dt*p*q*dx
+        a_int = -(fd.dot(fd.grad(p), q*gradperp(psi_mod)) - Dt*p*(Q-r*q))*dx
+        a_flux = Dt*(fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
+        arhs = a_mass - (a_int + a_flux)
 
         q_prob = fd.LinearVariationalProblem(a_mass,
                                              fd.action(arhs, self.q1),
@@ -123,7 +132,10 @@ class Euler_SD(base_model):
             self.dW.assign(self.X[step+1])
             if self.lambdas:
                 self.dW += self.X[step+1+self.nsteps]*(self.dt)**0.5
-            self.dW_solver.solve()
+            # solve  dW --> dU0 --> dU1 --> dU3
+            self.wsolver0.solve()
+            self.wsolver1.solve()
+            self.wsolver.solve()
 
             # Compute the streamfunction for the known value of q0
             self.q1.assign(self.q0)
@@ -136,12 +148,12 @@ class Euler_SD(base_model):
             self.q_solver.solve()
 
             # Find intermediate solution q^(2)
-            self.q1.assign(0.75 * self.q0 + 0.25 * self.dq1)
+            self.q1.assign((3/4)*self.q0 + (1/4)*self.dq1)
             self.psi_solver.solve()
             self.q_solver.solve()
 
             # Find new solution q^(n+1)
-            self.q0.assign(self.q0/3 + 2 * self.dq1/3)
+            self.q0.assign((1/3)*self.q0 + (2/3)*self.dq1)
         X1[0].assign(self.q0)  # save sol at the nstep th time
 
     # control PV
