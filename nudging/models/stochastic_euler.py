@@ -21,6 +21,8 @@ class Euler_SD(base_model):
                                              direction="x",
                                              quadrilateral=True,
                                              comm=comm)
+        dx = fd.dx
+        dS = fd.dS
         # FE spaces
         self.Vcg = fd.FunctionSpace(self.mesh, "CG", 1)  # Streamfunctions
         self.Vdg = fd.FunctionSpace(self.mesh, "DQ", 1)  # PV space
@@ -36,8 +38,8 @@ class Euler_SD(base_model):
         self.psi0 = fd.Function(self.Vcg)
 
         # Build the weak form for the inversion
-        from firedrake import inner, grad, dx
-        Apsi = (inner(grad(psi), grad(phi)) + psi*phi)*dx
+        
+        Apsi = (fd.inner(fd.grad(psi), fd.grad(phi)) + psi*phi)*dx
         Lpsi = -self.q1 * phi * dx
 
         bc1 = fd.DirichletBC(self.Vcg, 0.0, (1, 2))
@@ -61,7 +63,7 @@ class Euler_SD(base_model):
         du_w = fd.Function(self.Vcg)
 
         bcs_dw = fd.DirichletBC(self.Vcg,  fd.zero(), ("on_boundary"))
-        a_dW = inner(grad(dw), grad(dW_phi))*dx + dw*dW_phi*dx
+        a_dW = fd.inner(fd.grad(dw), fd.grad(dW_phi))*dx + dw*dW_phi*dx
         L_dW = self.dW*dW_phi*dx
 
         dW_problem = fd.LinearVariationalProblem(a_dW, L_dW, du_w,
@@ -70,26 +72,25 @@ class Euler_SD(base_model):
                                                     solver_parameters=sp)
 
         # Add noise with stream function to get stochastic velocity
-        from firedrake import dot, jump, as_vector
+        
         psi_mod = self.psi0+du_w
 
         def gradperp(u):
-            return as_vector((-u.dx(1), u.dx(0)))
+            return fd.as_vector((-u.dx(1), u.dx(0)))
         self.gradperp = gradperp
         # upwinding terms
         n_F = fd.FacetNormal(self.mesh)
-        un = 0.5 * (dot(gradperp(psi_mod), n_F) +
-                    abs(dot(gradperp(psi_mod), n_F)))
+        un = 0.5 * (fd.dot(gradperp(psi_mod), n_F) +
+                    abs(fd.dot(gradperp(psi_mod), n_F)))
 
         q = fd.TrialFunction(self.Vdg)
         p = fd.TestFunction(self.Vdg)
         Q = fd.Function(self.Vdg)
 
         # timestepping equation
-        from firedrake import dS
         a_mass = p*q*dx
-        a_int = (dot(grad(p), -q*gradperp(psi_mod)) - p*(Q-r*q)) * dx
-        a_flux = (dot(jump(p), un("+") * q("+") - un("-") * q("-"))) * dS
+        a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - p*(Q-r*q)) * dx
+        a_flux = (fd.dot(fd.jump(p), un("+") * q("+") - un("-") * q("-"))) * dS
         arhs = a_mass - self.dt * (a_int + a_flux)
 
         q_prob = fd.LinearVariationalProblem(a_mass,
@@ -182,13 +183,14 @@ class Euler_SD(base_model):
     def lambda_functional(self):
         nsteps = self.nsteps
         dt = self.dt
+        dx = fd.dx
+        cv = fd.CellVolume(self.mesh)
         for step in range(nsteps):
             lambda_step = self.X[nsteps + 1 + step]
             dW_step = self.X[1 + step]
-            dx = fd.dx
             dlfunc = fd.assemble(
-                (1/self.alpha_w)*lambda_step**2*dt/2*dx
-                - (1/self.alpha_w)*lambda_step*dW_step*dt**0.5*dx)
+                (1/cv)*lambda_step**2*dt/2*dx
+                - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
             if step == 0:
                 lfunc = dlfunc
             else:
