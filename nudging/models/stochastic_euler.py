@@ -66,25 +66,24 @@ class Euler_SD(base_model):
         dU_2 = fd.Function(self.Vcg)
         dU_3 = fd.Function(self.Vcg)
 
-        bcs_dw = fd.DirichletBC(self.Vcg,  fd.zero(), ("on_boundary"))
         a_dW = kappa_inv_sq*fd.inner(fd.grad(dU), fd.grad(dW_phi))*dx \
             + dU*dW_phi*dx
         L_w1 = alpha_w*self.dW*dW_phi*dx
-        w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_1, bcs=bcs_dw)
+        w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_1)
         self.wsolver1 = fd.LinearVariationalSolver(w_prob1,
                                                    solver_parameters=sp)
         L_w2 = alpha_w*dU_1*dW_phi*dx
-        w_prob2 = fd.LinearVariationalProblem(a_dW, L_w2, dU_2, bcs=bcs_dw)
+        w_prob2 = fd.LinearVariationalProblem(a_dW, L_w2, dU_2)
         self.wsolver2 = fd.LinearVariationalSolver(w_prob2,
                                                    solver_parameters=sp)
         L_w3 = alpha_w*dU_2*dW_phi*dx
-        w_prob3 = fd.LinearVariationalProblem(a_dW, L_w3, dU_3, bcs=bcs_dw)
+        w_prob3 = fd.LinearVariationalProblem(a_dW, L_w3, dU_3)
         self.wsolver3 = fd.LinearVariationalSolver(w_prob3,
                                                    solver_parameters=sp)
         # Add noise with stream function to get stochastic velocity
         Dt = self.dt
-        psi_mod = self.psi0+dU_3  # SALT noise
-        # psi_mod = self.psi0*Dt+dU_3*Dt**0.5  # SALT noise
+        psi_mod = self.psi0*Dt+dU_3*Dt**2  # SALT noise
+
         def gradperp(u):
             return fd.as_vector((-u.dx(1), u.dx(0)))
         self.gradperp = gradperp
@@ -99,9 +98,9 @@ class Euler_SD(base_model):
         Q.interpolate(0.1*fd.sin(8*fd.pi*x[0]))
         # timestepping equation
         a_mass = p*q*dx
-        a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - p*(Q-r*q))*dx
-        a_flux = (fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
-        arhs = a_mass - Dt*(a_int + a_flux)
+        a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - Dt*p*(Q-r*q))*dx
+        a_flux = Dt*(fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
+        arhs = a_mass - (a_int + a_flux)
 
         q_prob = fd.LinearVariationalProblem(a_mass,
                                              fd.action(arhs, self.q1),
