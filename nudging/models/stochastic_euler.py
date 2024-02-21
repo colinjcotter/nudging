@@ -5,7 +5,7 @@ import numpy as np
 
 
 class Euler_SD(base_model):
-    def __init__(self, n_xy_pts, nsteps, dt=0.5, lambdas=False, seed=12353):
+    def __init__(self, n_xy_pts, nsteps, dt=0.0025, lambdas=False, seed=12353):
         self.n = n_xy_pts
         self.nsteps = nsteps
         self.dt = dt
@@ -21,6 +21,7 @@ class Euler_SD(base_model):
                                              direction="x",
                                              quadrilateral=True,
                                              comm=comm)
+        x = fd.SpatialCoordinate(self.mesh)
         dx = fd.dx
         dS = fd.dS
         # FE spaces
@@ -38,10 +39,10 @@ class Euler_SD(base_model):
         self.psi0 = fd.Function(self.Vcg)
 
         # Build the weak form for the inversion
-        Apsi = (fd.inner(fd.grad(psi), fd.grad(phi)) + psi*phi)*dx
+        Apsi = (fd.inner(fd.grad(psi), fd.grad(phi)))*dx
         Lpsi = -self.q1 * phi * dx
-
-        bc1 = fd.DirichletBC(self.Vcg, 0.0, (1, 2))
+        # bc1 = fd.DirichletBC(self.Vcg, 0.0, (1, 2))
+        bc1 = fd.DirichletBC(self.Vcg, fd.zero(), ("on_boundary"))
 
         psi_problem = fd.LinearVariationalProblem(Apsi, Lpsi,
                                                   self.psi0,
@@ -68,22 +69,22 @@ class Euler_SD(base_model):
         bcs_dw = fd.DirichletBC(self.Vcg,  fd.zero(), ("on_boundary"))
         a_dW = kappa_inv_sq*fd.inner(fd.grad(dU), fd.grad(dW_phi))*dx \
             + dU*dW_phi*dx
-        L_w0 = alpha_w*self.dW*dW_phi*dx
-        w_prob0 = fd.LinearVariationalProblem(a_dW, L_w0, dU_1, bcs=bcs_dw)
-        self.wsolver0 = fd.LinearVariationalSolver(w_prob0,
-                                                     solver_parameters=sp)
-        L_w1 = alpha_w*dU_1*dW_phi*dx
-        w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_2, bcs=bcs_dw)
+        L_w1 = alpha_w*self.dW*dW_phi*dx
+        w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_1, bcs=bcs_dw)
         self.wsolver1 = fd.LinearVariationalSolver(w_prob1,
-                                                     solver_parameters=sp)
-        L_w = alpha_w*dU_2*dW_phi*dx
-        w_prob = fd.LinearVariationalProblem(a_dW, L_w, dU_3, bcs=bcs_dw)
-        self.wsolver = fd.LinearVariationalSolver(w_prob,
-                                                    solver_parameters=sp)
+                                                   solver_parameters=sp)
+        L_w2 = alpha_w*dU_1*dW_phi*dx
+        w_prob2 = fd.LinearVariationalProblem(a_dW, L_w2, dU_2, bcs=bcs_dw)
+        self.wsolver2 = fd.LinearVariationalSolver(w_prob2,
+                                                   solver_parameters=sp)
+        L_w3 = alpha_w*dU_2*dW_phi*dx
+        w_prob3 = fd.LinearVariationalProblem(a_dW, L_w3, dU_3, bcs=bcs_dw)
+        self.wsolver3 = fd.LinearVariationalSolver(w_prob3,
+                                                   solver_parameters=sp)
         # Add noise with stream function to get stochastic velocity
         Dt = self.dt
-        psi_mod = self.psi0*Dt+dU_3*Dt**0.5  # SALT noise
-
+        psi_mod = self.psi0+dU_3  # SALT noise
+        # psi_mod = self.psi0*Dt+dU_3*Dt**0.5  # SALT noise
         def gradperp(u):
             return fd.as_vector((-u.dx(1), u.dx(0)))
         self.gradperp = gradperp
@@ -95,12 +96,12 @@ class Euler_SD(base_model):
         q = fd.TrialFunction(self.Vdg)
         p = fd.TestFunction(self.Vdg)
         Q = fd.Function(self.Vdg)
-
+        Q.interpolate(0.1*fd.sin(8*fd.pi*x[0]))
         # timestepping equation
-        a_mass = Dt*p*q*dx
-        a_int = -(fd.dot(fd.grad(p), q*gradperp(psi_mod)) - Dt*p*(Q-r*q))*dx
-        a_flux = Dt*(fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
-        arhs = a_mass - (a_int + a_flux)
+        a_mass = p*q*dx
+        a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - p*(Q-r*q))*dx
+        a_flux = (fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
+        arhs = a_mass - Dt*(a_int + a_flux)
 
         q_prob = fd.LinearVariationalProblem(a_mass,
                                              fd.action(arhs, self.q1),
@@ -133,9 +134,9 @@ class Euler_SD(base_model):
             if self.lambdas:
                 self.dW += self.X[step+1+self.nsteps]*(self.dt)**0.5
             # solve  dW --> dU0 --> dU1 --> dU3
-            self.wsolver0.solve()
             self.wsolver1.solve()
-            self.wsolver.solve()
+            self.wsolver2.solve()
+            self.wsolver3.solve()
 
             # Compute the streamfunction for the known value of q0
             self.q1.assign(self.q0)
