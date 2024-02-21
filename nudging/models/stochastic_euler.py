@@ -5,12 +5,14 @@ import numpy as np
 
 
 class Euler_SD(base_model):
-    def __init__(self, n_xy_pts, nsteps, dt=0.0025, lambdas=False, seed=12353):
+    def __init__(self, n_xy_pts, nsteps, dt,
+                 noise_scale, lambdas=False, seed=12353):
         self.n = n_xy_pts
         self.nsteps = nsteps
         self.dt = dt
         self.lambdas = lambdas  # include lambdas in allocate
         self.seed = seed
+        self.noise_scale = noise_scale
 
     def setup(self, comm=MPI.COMM_WORLD):
         r = 0.01
@@ -41,7 +43,6 @@ class Euler_SD(base_model):
         # Build the weak form for the inversion
         Apsi = (fd.inner(fd.grad(psi), fd.grad(phi)))*dx
         Lpsi = -self.q1 * phi * dx
-        # bc1 = fd.DirichletBC(self.Vcg, 0.0, (1, 2))
         bc1 = fd.DirichletBC(self.Vcg, fd.zero(), ("on_boundary"))
 
         psi_problem = fd.LinearVariationalProblem(Apsi, Lpsi,
@@ -60,7 +61,7 @@ class Euler_SD(base_model):
 
         cell_area = fd.CellVolume(self.mesh)
         alpha_w = (1/cell_area**0.5)
-        kappa_inv_sq = fd.Constant(1.0)
+        kappa_inv_sq = 2*cell_area**2
 
         dU_1 = fd.Function(self.Vcg)
         dU_2 = fd.Function(self.Vcg)
@@ -72,17 +73,17 @@ class Euler_SD(base_model):
         w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_1)
         self.wsolver1 = fd.LinearVariationalSolver(w_prob1,
                                                    solver_parameters=sp)
-        L_w2 = alpha_w*dU_1*dW_phi*dx
+        L_w2 = dU_1*dW_phi*dx
         w_prob2 = fd.LinearVariationalProblem(a_dW, L_w2, dU_2)
         self.wsolver2 = fd.LinearVariationalSolver(w_prob2,
                                                    solver_parameters=sp)
-        L_w3 = alpha_w*dU_2*dW_phi*dx
+        L_w3 = dU_2*dW_phi*dx
         w_prob3 = fd.LinearVariationalProblem(a_dW, L_w3, dU_3)
         self.wsolver3 = fd.LinearVariationalSolver(w_prob3,
                                                    solver_parameters=sp)
         # Add noise with stream function to get stochastic velocity
         Dt = self.dt
-        psi_mod = self.psi0*Dt+dU_3*Dt**2  # SALT noise
+        psi_mod = self.psi0*Dt+self.noise_scale*dU_3*Dt**0.5  # SALT noise
 
         def gradperp(u):
             return fd.as_vector((-u.dx(1), u.dx(0)))
@@ -99,7 +100,7 @@ class Euler_SD(base_model):
         # timestepping equation
         a_mass = p*q*dx
         a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - Dt*p*(Q-r*q))*dx
-        a_flux = Dt*(fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
+        a_flux = (fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
         arhs = a_mass - (a_int + a_flux)
 
         q_prob = fd.LinearVariationalProblem(a_mass,
