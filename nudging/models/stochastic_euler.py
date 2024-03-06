@@ -6,23 +6,23 @@ import numpy as np
 
 class Euler_SD(base_model):
     def __init__(self, n_xy_pts, nsteps, dt,
-                 noise_scale, lambdas=False, seed=12353):
+                 noise_scale, mesh=False, lambdas=False, seed=12353):
         self.n = n_xy_pts
         self.nsteps = nsteps
         self.dt = dt
         self.lambdas = lambdas  # include lambdas in allocate
         self.seed = seed
         self.noise_scale = noise_scale
+        self.mesh = mesh
 
     def setup(self, comm=MPI.COMM_WORLD):
         r = 0.01
-        self.Lx = 2.0*fd.pi  # Zonal length
-        self.Ly = 2.0*fd.pi  # Meridonal length
-        self.mesh = fd.PeriodicRectangleMesh(self.n, self.n,
-                                             self.Lx, self.Ly,
-                                             direction="x",
-                                             quadrilateral=True,
-                                             comm=comm)
+        self.Lx = 1.0  # Zonal length
+        self.Ly = 1.0  # Meridonal length
+        if not self.mesh:
+            self.mesh = fd.UnitSquareMesh(self.n, self.n,
+                                          quadrilateral=True,
+                                          comm=comm)
         x = fd.SpatialCoordinate(self.mesh)
         dx = fd.dx
         dS = fd.dS
@@ -61,13 +61,13 @@ class Euler_SD(base_model):
 
         cell_area = fd.CellVolume(self.mesh)
         alpha_w = (1/cell_area**0.5)
-        kappa_inv_sq = 2*cell_area**2
+        # kappa_inv_sq = 2*cell_area**2
 
         dU_1 = fd.Function(self.Vcg)
         dU_2 = fd.Function(self.Vcg)
         dU_3 = fd.Function(self.Vcg)
 
-        a_dW = kappa_inv_sq*fd.inner(fd.grad(dU), fd.grad(dW_phi))*dx \
+        a_dW = fd.inner(fd.grad(dU), fd.grad(dW_phi))*dx \
             + dU*dW_phi*dx
         L_w1 = alpha_w*self.dW*dW_phi*dx
         w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_1)
