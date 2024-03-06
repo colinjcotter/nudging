@@ -121,6 +121,7 @@ class Euler_SD(base_model):
         xv, yv = np.meshgrid(x_point, y_point)
         x_obs_list = np.vstack([xv.ravel(), yv.ravel()]).T.tolist()
         VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
+        self.VVOM_out = fd.VectorFunctionSpace(VOM.input_ordering, "DG", 0)
         self.VVOM = fd.VectorFunctionSpace(VOM, "DG", 0)
 
     def run(self, X0, X1):
