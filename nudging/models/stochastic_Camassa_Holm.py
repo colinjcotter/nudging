@@ -5,8 +5,9 @@ import numpy as np
 
 
 class Camsholm(base_model):
-    def __init__(self, n, nsteps, xpoints, seed=12353, lambdas=False,
-                 dt=0.025, alpha=1.0, mu=0.01, salt=False):
+    def __init__(self, n, nsteps, obs_points, noise_scale,
+                 dt=0.025, alpha=1.0, mu=0.01, salt=False,
+                 seed=12353, lambdas=False,):
 
         self.n = n
         self.nsteps = nsteps
@@ -15,7 +16,8 @@ class Camsholm(base_model):
         self.dt = dt
         self.seed = seed
         self.salt = salt
-        self.xpoints = xpoints
+        self.obs_points = obs_points
+        self.noise_scale = noise_scale
         self.lambdas = lambdas  # include lambdas in allocate
 
     def setup(self, comm=MPI.COMM_WORLD):
@@ -84,7 +86,7 @@ class Camsholm(base_model):
 
         if self.salt:
             # SALT noise
-            v = uh*Dt+dU_3*Dt**0.5
+            v = uh*Dt+self.noise_scale*dU_3*Dt**0.5
         else:
             # additive noise
             v = uh*Dt
@@ -93,7 +95,7 @@ class Camsholm(base_model):
                 + self.mu*Dt*p.dx(0)*mh.dx(0))*dx)
 
         if not self.salt:
-            L += p*dU_3*Dt**0.5*dx
+            L += p*self.noise_scale*dU_3*Dt**0.5*dx
 
         # timestepping solver
         uprob = fd.NonlinearVariationalProblem(L, self.w1)
@@ -105,10 +107,8 @@ class Camsholm(base_model):
         self.X = self.allocate()
 
         # vertex only mesh for observations
-        x_obs = np.linspace(0, 40, num=self.xpoints, endpoint=False)
-        x_obs_list = []
-        for i in x_obs:
-            x_obs_list.append([i])
+        x_obs = np.linspace(0, 40, num=self.obs_points, endpoint=False)
+        x_obs_list = x_obs.reshape(-1, 1).tolist()
         self.VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
         self.VVOM = fd.FunctionSpace(self.VOM, "DG", 0)
 
