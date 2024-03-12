@@ -8,15 +8,15 @@ from operator import mul
 from functools import reduce
 
 class KS(base_model):
-    def __init__(self, n, nsteps, xpoints, lambdas=False, dt = 0.025, seed=12353):
+    def __init__(self, n, nsteps, xpoints, lambdas=False, dt = 0.0025, seed=12353):
         self.n = n
         self.nsteps = nsteps
         self.dt = dt
         self.seed = seed
-        self.xpoints = xpoints
+        self.xpoints = xpoints #number of observation points
         self.lambdas = lambdas # include lambdas in allocate
 
-    def setup(self, comm = MPI.COMM_WORLD):
+    def setup(self, comm = MPI.COMM_WORLD, nu = 0.5):
         self.mesh = PeriodicIntervalMesh(self.n, 40.0, comm = comm)
         self.x, = SpatialCoordinate(self.mesh)
         self.V = FunctionSpace(self.mesh, "HER", 3)
@@ -63,11 +63,11 @@ class KS(base_model):
         self.X = self.allocate()
 
         # vertex only mesh for observations
-        x_obs = np.arange(0.5,self.xpoints)
-        x_obs_list = []
-        for i in x_obs:
-            x_obs_list.append([i])
-        self.VOM = VertexOnlyMesh(self.mesh, x_obs_list)
+        a = np.arange(0, 40, 40/self.xpoints)
+        n = a.size
+        a = a.reshape((n,1))
+        self.VOM = VertexOnlyMesh(self.mesh, a)
+
         self.VVOM = FunctionSpace(self.VOM, "DG", 0)
 
 
@@ -85,7 +85,7 @@ class KS(base_model):
         #a(u, v) = nu * <v, dW>
         #where a is the variational form of the operator M[u] = u + k^-2 * u_xx
         k = Constant(1.0)
-        nu = Constant(1.0)
+
         self.v = TestFunction(self.V_)
         L_ = (self.U * self.v + k**(-2) * self.U.dx(0) * self.v.dx(0) - nu * self.v * w) * dx
         #solve problem and store it on u

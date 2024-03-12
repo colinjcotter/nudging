@@ -201,7 +201,7 @@ class bootstrap_filter(base_filter):
 
 
 class jittertemp_filter(base_filter):
-    def __init__(self, n_jitt, delta=None,
+    def __init__(self, n_jitt, delta=0.1,
                  verbose=False, MALA=False, nudging=False,
                  visualise_tape=False):
         self.delta = delta

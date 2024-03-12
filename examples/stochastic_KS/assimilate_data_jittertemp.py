@@ -37,7 +37,7 @@ for i in range(nensemble[jtfilter.ensemble_rank]):
 
 
 def log_likelihood(y, Y):
-    ll = (y-Y)**2/0.05**2/2*dx
+    ll = (y-Y)**2/0.5**2/2*dx
     return ll
 
 #Load data
@@ -71,14 +71,27 @@ def mycallback(ensemble):
    X = ensemble[0]
    mylist.append(X.at(xpt))
 
+outfile = []
+#nensamble number of particles per rank
+for i in range(nensemble[jtfilter.ensemble_rank]):
+    ensemble_idx = sum(nensemble[:jtfilter.ensemble_rank]) + i
+    outfile.append(File(f"{ensemble_idx}_output.pvd", comm=jtfilter.subcommunicators.comm))
+
 # do assimiliation step
 for k in range(N_obs):
     PETSc.Sys.Print("Step", k)
     yVOM.dat.data[:] = y[k, :]
 
+
     # actually do the data assimilation step
     jtfilter.assimilation_step(yVOM, log_likelihood)
 
+    for i in range(nensemble[jtfilter.ensemble_rank]):
+        outfile[i].write(jtfilter.ensemble[i][0], time=k)
+        ensemble_idx = sum(nensemble[:jtfilter.ensemble_rank]) + i
+        u = jtfilter.ensemble[i][0]
+        with CheckpointFile("output_cp.h5", 'w') as afile:
+            afile.save_function(u, idx=k+1, name=str(ensemble_idx))
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
         model.w0.assign(jtfilter.ensemble[i][0])
@@ -96,4 +109,4 @@ if COMM_WORLD.rank == 0:
     print("Obs shape", y_sim_obs_allobs_step.shape)
     print("Ensemble member", y_e.shape)
     np.save("assimilated_ensemble.npy", y_e)
-    np.save("simualated_all_time_obs.npy", y_sim_obs_allobs_step)
+    np.save("simulated_all_time_obs.npy", y_sim_obs_allobs_step)
