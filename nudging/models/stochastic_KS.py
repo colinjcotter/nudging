@@ -28,10 +28,6 @@ class KS(base_model):
         #for the finite difference approximation of the time derivative
         self.w0 = Function(self.V)
 
-        #initial condition
-        self.w0.project(0.2*2/(exp(self.x-403./15.) + exp(-self.x+403./15.))
-                       + 0.5*2/(exp(self.x-203./15.)+exp(-self.x+203./15.)))
-
         #test function for the variational form
         self.phi = TestFunction(self.V)
 
@@ -84,10 +80,10 @@ class KS(base_model):
         #now calculate Matern field by solving the PDE with variational form
         #a(u, v) = nu * <v, dW>
         #where a is the variational form of the operator M[u] = u + k^-2 * u_xx
-        k = Constant(1.0)
+        kappa = Constant(10.0)
 
         self.v = TestFunction(self.V_)
-        L_ = (self.U * self.v + k**(-2) * self.U.dx(0) * self.v.dx(0) - nu * self.v * w) * dx
+        L_ = (self.U * self.v + kappa**(2) * self.U.dx(0) * self.v.dx(0) - nu * self.v * w) * dx
         #solve problem and store it on u
         noiseprob = NonlinearVariationalProblem(L_, self.U)
         self.noisesolver = NonlinearVariationalSolver(noiseprob, solver_parameters=
