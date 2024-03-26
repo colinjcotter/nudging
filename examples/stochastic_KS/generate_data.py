@@ -14,8 +14,8 @@ add observation noise N(0, sigma^2)
 """
 nsteps = 5
 xpoints = 40
-model = KS(100, nsteps, xpoints)
-model.setup(nu=0.01)
+model = KS(300, nsteps, xpoints)
+model.setup(nu=0.001)
 X_truth = model.allocate()
 u0 = X_truth[0]
 x, = SpatialCoordinate(model.mesh)

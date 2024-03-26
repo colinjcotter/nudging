@@ -8,7 +8,7 @@ from operator import mul
 from functools import reduce
 
 class KS(base_model):
-    def __init__(self, n, nsteps, xpoints, lambdas=False, dt = 0.0025, seed=12353):
+    def __init__(self, n, nsteps, xpoints, lambdas=False, dt = 0.01, seed=12353):
         self.n = n
         self.nsteps = nsteps
         self.dt = dt
@@ -16,7 +16,7 @@ class KS(base_model):
         self.xpoints = xpoints #number of observation points
         self.lambdas = lambdas # include lambdas in allocate
 
-    def setup(self, comm = MPI.COMM_WORLD, nu = 0.5):
+    def setup(self, comm = MPI.COMM_WORLD, nu = 0.001):
         self.mesh = PeriodicIntervalMesh(self.n, 40.0, comm = comm)
         self.x, = SpatialCoordinate(self.mesh)
         self.V = FunctionSpace(self.mesh, "HER", 3)
@@ -71,7 +71,7 @@ class KS(base_model):
         pcg = PCG64(seed=123456789)
         self.rg = RandomGenerator(pcg)
         #normal distribution
-        self.amplitude = Constant(0.05)
+        self.amplitude = Constant(0.005)
         fx = Function(self.V_)
         self.fx = fx
         #divide coeffs by area of each cell to get w
@@ -80,7 +80,7 @@ class KS(base_model):
         #now calculate Matern field by solving the PDE with variational form
         #a(u, v) = nu * <v, dW>
         #where a is the variational form of the operator M[u] = u + k^-2 * u_xx
-        kappa = Constant(10.0)
+        kappa = Constant(50.0)
 
         self.v = TestFunction(self.V_)
         L_ = (self.U * self.v + kappa**(2) * self.U.dx(0) * self.v.dx(0) - nu * self.v * w) * dx

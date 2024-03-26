@@ -13,7 +13,8 @@ from nudging.models.stochastic_KS import KS
 
 nsteps = 5
 xpoints = 40
-model = KS(100, nsteps, xpoints)
+model = KS(300, nsteps, xpoints)
+model.setup(nu=0.0005)
 MALA = False
 verbose = True
 jtfilter = jittertemp_filter(n_jitt=4, verbose=verbose, MALA=MALA)
@@ -22,6 +23,12 @@ nensemble = [5,5,5,5]
 jtfilter.setup(nensemble, model)
 
 x, = SpatialCoordinate(model.mesh)
+
+#for smoother output
+Q = FunctionSpace(model.mesh, 'CG', 1)
+u_out = Function(Q)
+
+
 
 #prepare the initial ensemble
 for i in range(nensemble[jtfilter.ensemble_rank]):
@@ -34,7 +41,6 @@ for i in range(nensemble[jtfilter.ensemble_rank]):
 
     u = jtfilter.ensemble[i][0]
     u.project(u0_exp)
-
 
 def log_likelihood(y, Y):
     ll = (y-Y)**2/0.5**2/2*dx
@@ -87,11 +93,17 @@ for k in range(N_obs):
     jtfilter.assimilation_step(yVOM, log_likelihood)
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
-        outfile[i].write(jtfilter.ensemble[i][0], time=k)
-        ensemble_idx = sum(nensemble[:jtfilter.ensemble_rank]) + i
-        u = jtfilter.ensemble[i][0]
-        with CheckpointFile("output_cp.h5", 'w') as afile:
-            afile.save_function(u, idx=k+1, name=str(ensemble_idx))
+
+        u_out.interpolate(jtfilter.ensemble[i][0])
+        outfile[i].write(u_out, time=k)
+        #outfile[i].write(jtfilter.ensemble[i][0], time=k)
+
+
+
+        #ensemble_idx = sum(nensemble[:jtfilter.ensemble_rank]) + i
+        #u = jtfilter.ensemble[i][0]
+        #with CheckpointFile("output_cp.h5", 'w') as afile:
+        #    afile.save_function(u, idx=k+1, name=str(ensemble_idx))
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
         model.w0.assign(jtfilter.ensemble[i][0])
