@@ -68,10 +68,9 @@ class KS(base_model):
 
 
         # PCG64 random number generator
-        pcg = PCG64(seed=123456789)
+        pcg = PCG64(seed=self.seed)
         self.rg = RandomGenerator(pcg)
         #normal distribution
-        self.amplitude = Constant(0.005)
         fx = Function(self.V_)
         self.fx = fx
         #divide coeffs by area of each cell to get w
@@ -80,7 +79,7 @@ class KS(base_model):
         #now calculate Matern field by solving the PDE with variational form
         #a(u, v) = nu * <v, dW>
         #where a is the variational form of the operator M[u] = u + k^-2 * u_xx
-        kappa = Constant(50.0)
+        kappa = Constant(25.0)
 
         self.v = TestFunction(self.V_)
         L_ = (self.U * self.v + kappa**(2) * self.U.dx(0) * self.v.dx(0) - nu * self.v * w) * dx

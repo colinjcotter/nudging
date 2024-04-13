@@ -14,7 +14,7 @@ from nudging.models.stochastic_KS import KS
 nsteps = 5
 xpoints = 40
 model = KS(300, nsteps, xpoints)
-model.setup(nu=0.0005)
+model.setup(nu=0.005)
 MALA = False
 verbose = True
 jtfilter = jittertemp_filter(n_jitt=4, verbose=verbose, MALA=MALA)
@@ -90,7 +90,11 @@ for k in range(N_obs):
 
 
     # actually do the data assimilation step
-    jtfilter.assimilation_step(yVOM, log_likelihood)
+    #jtfilter.assimilation_step(yVOM, log_likelihood)
+
+    #to check the spread of the noise
+    model.randomize(jtfilter.ensemble[k])
+    model.run(jtfilter.ensemble[k], jtfilter.ensemble[k])
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
 
@@ -99,11 +103,11 @@ for k in range(N_obs):
         #outfile[i].write(jtfilter.ensemble[i][0], time=k)
 
 
+        ensemble_idx = sum(nensemble[:jtfilter.ensemble_rank]) + i
+        u = jtfilter.ensemble[i][0]
+        with CheckpointFile("output_cp.h5", 'w', comm=jtfilter.subcommunicators.comm) as afile:
+            afile.save_function(u, idx=k+1, name=str(ensemble_idx))
 
-        #ensemble_idx = sum(nensemble[:jtfilter.ensemble_rank]) + i
-        #u = jtfilter.ensemble[i][0]
-        #with CheckpointFile("output_cp.h5", 'w') as afile:
-        #    afile.save_function(u, idx=k+1, name=str(ensemble_idx))
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
         model.w0.assign(jtfilter.ensemble[i][0])
