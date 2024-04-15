@@ -79,7 +79,7 @@ class KS(base_model):
         #now calculate Matern field by solving the PDE with variational form
         #a(u, v) = nu * <v, dW>
         #where a is the variational form of the operator M[u] = u + k^-2 * u_xx
-        kappa = Constant(25.0)
+        kappa = Constant(5.0)
 
         self.v = TestFunction(self.V_)
         L_ = (self.U * self.v + kappa**(2) * self.U.dx(0) * self.v.dx(0) - nu * self.v * w) * dx

@@ -13,13 +13,13 @@ from nudging.models.stochastic_KS import KS
 
 nsteps = 5
 xpoints = 40
-model = KS(300, nsteps, xpoints)
+model = KS(200, nsteps, xpoints)
 model.setup(nu=0.005)
 MALA = False
 verbose = True
 jtfilter = jittertemp_filter(n_jitt=4, verbose=verbose, MALA=MALA)
 
-nensemble = [5,5,5,5]
+nensemble = [5]*6
 jtfilter.setup(nensemble, model)
 
 x, = SpatialCoordinate(model.mesh)
@@ -78,7 +78,7 @@ def mycallback(ensemble):
    mylist.append(X.at(xpt))
 
 outfile = []
-#nensamble number of particles per rank
+#nensemble stores the number of particles per rank
 for i in range(nensemble[jtfilter.ensemble_rank]):
     ensemble_idx = sum(nensemble[:jtfilter.ensemble_rank]) + i
     outfile.append(File(f"{ensemble_idx}_output.pvd", comm=jtfilter.subcommunicators.comm))
@@ -92,11 +92,10 @@ for k in range(N_obs):
     # actually do the data assimilation step
     #jtfilter.assimilation_step(yVOM, log_likelihood)
 
-    #to check the spread of the noise
-    model.randomize(jtfilter.ensemble[k])
-    model.run(jtfilter.ensemble[k], jtfilter.ensemble[k])
-
     for i in range(nensemble[jtfilter.ensemble_rank]):
+        #to check the spread of the noise
+        model.randomize(jtfilter.ensemble[i])
+        model.run(jtfilter.ensemble[i], jtfilter.ensemble[i])
 
         u_out.interpolate(jtfilter.ensemble[i][0])
         outfile[i].write(u_out, time=k)
