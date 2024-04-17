@@ -14,7 +14,14 @@ from nudging.models.stochastic_KS import KS
 nsteps = 5
 xpoints = 40
 model = KS(300, nsteps, xpoints)
-model.setup(nu=0.1)
+
+#Load initial condition from a checkpoint file after some time idx
+with CheckpointFile("initial_sol_cp.h5", 'r') as afile:
+    mesh = afile.load_mesh()
+    u0_read = afile.load_function(mesh, name="u_out", idx=90)
+
+model.setup(mesh)
+
 MALA = False
 verbose = True
 jtfilter = jittertemp_filter(n_jitt=4, verbose=verbose, MALA=MALA)
@@ -32,15 +39,21 @@ u_out = Function(Q)
 
 #prepare the initial ensemble
 for i in range(nensemble[jtfilter.ensemble_rank]):
-    dx0 = model.rg.normal(model.R, 0., 0.05)
-    dx1 = model.rg.normal(model.R, 0., 0.05)
-    a = model.rg.uniform(model.R, 0., 1.0)
-    b = model.rg.uniform(model.R, 0., 1.0)
-    u0_exp = (1+a)*0.2*2/(exp(x-403./15. + dx0) + exp(-x+403./15. + dx0)) \
-        + (1+b)*0.5*2/(exp(x-203./15. + dx1)+exp(-x+203./15. + dx1))
+    #dx0 = model.rg.normal(model.R, 0., 0.05)
+    #dx1 = model.rg.normal(model.R, 0., 0.05)
+    #a = model.rg.uniform(model.R, 0., 1.0)
+    #b = model.rg.uniform(model.R, 0., 1.0)
+    #u0_exp = (1+a)*0.2*2/(exp(x-403./15. + dx0) + exp(-x+403./15. + dx0)) \
+    #    + (1+b)*0.5*2/(exp(x-203./15. + dx1)+exp(-x+203./15. + dx1))
+
+    #u = jtfilter.ensemble[i][0]
+    #u.project(u0_exp)
+
+    #with CheckpointFile("initial_sol_cp.h5", 'r') as afile:
+    #    u0_read = afile.load_function(model.mesh, name="u_out", idx=90)
 
     u = jtfilter.ensemble[i][0]
-    u.project(u0_exp)
+    u.project(u0_read)
 
 def log_likelihood(y, Y):
     ll = (y-Y)**2/0.05**2/2*dx

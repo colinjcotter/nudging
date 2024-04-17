@@ -15,16 +15,27 @@ add observation noise N(0, sigma^2)
 nsteps = 5
 xpoints = 40
 model = KS(300, nsteps, xpoints)
-model.setup(nu=0.1)
+
+#Load initial condition from a checkpoint file after some time idx
+with CheckpointFile("initial_sol_cp.h5", 'r') as afile:
+    mesh = afile.load_mesh()
+    u0_read = afile.load_function(mesh, name="u_out", idx=90)
+
+#set up the mesh from the cp file
+model.setup(mesh)
+
 X_truth = model.allocate()
 u0 = X_truth[0]
 x, = SpatialCoordinate(model.mesh)
-u0.project(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+exp(-x+203./15.)))
+
+#Initial condition
+#u0.project(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+exp(-x+203./15.)))
+u0.project(u0_read)
 
 Q = FunctionSpace(model.mesh, 'CG', 1)
-u_out = Function(Q)
+u_out = Function(Q, name="u_out")
 
-N_obs = 50
+N_obs = 100
 
 y_true = model.obs().dat.data[:]
 y_obs_full = np.zeros((N_obs, np.size(y_true)))
@@ -41,7 +52,6 @@ for i in range(N_obs):
 
     u_out.interpolate(X_truth[0])
     file0.write(u_out)
-
 
     y_true_full[i,:] = y_true
     y_true_data = np.save("y_true.npy", y_true_full)
