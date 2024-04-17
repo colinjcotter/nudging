@@ -16,7 +16,7 @@ class KS(base_model):
         self.xpoints = xpoints #number of observation points
         self.lambdas = lambdas # include lambdas in allocate
 
-    def setup(self, comm = MPI.COMM_WORLD, nu = 0.001):
+    def setup(self, comm = MPI.COMM_WORLD, nu = 0.1):
         self.mesh = PeriodicIntervalMesh(self.n, 40.0, comm = comm)
         self.x, = SpatialCoordinate(self.mesh)
         self.V = FunctionSpace(self.mesh, "HER", 3)

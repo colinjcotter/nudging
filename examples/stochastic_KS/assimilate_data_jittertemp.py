@@ -13,8 +13,8 @@ from nudging.models.stochastic_KS import KS
 
 nsteps = 5
 xpoints = 40
-model = KS(200, nsteps, xpoints)
-model.setup(nu=0.005)
+model = KS(300, nsteps, xpoints)
+model.setup(nu=0.1)
 MALA = False
 verbose = True
 jtfilter = jittertemp_filter(n_jitt=4, verbose=verbose, MALA=MALA)
@@ -43,7 +43,7 @@ for i in range(nensemble[jtfilter.ensemble_rank]):
     u.project(u0_exp)
 
 def log_likelihood(y, Y):
-    ll = (y-Y)**2/0.5**2/2*dx
+    ll = (y-Y)**2/0.05**2/2*dx
     return ll
 
 #Load data
@@ -90,12 +90,12 @@ for k in range(N_obs):
 
 
     # actually do the data assimilation step
-    #jtfilter.assimilation_step(yVOM, log_likelihood)
+    jtfilter.assimilation_step(yVOM, log_likelihood)
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
         #to check the spread of the noise
-        model.randomize(jtfilter.ensemble[i])
-        model.run(jtfilter.ensemble[i], jtfilter.ensemble[i])
+        #model.randomize(jtfilter.ensemble[i])
+        #model.run(jtfilter.ensemble[i], jtfilter.ensemble[i])
 
         u_out.interpolate(jtfilter.ensemble[i][0])
         outfile[i].write(u_out, time=k)
