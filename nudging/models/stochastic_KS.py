@@ -1,5 +1,4 @@
 from firedrake import *
-from firedrake_adjoint import *
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from nudging.model import *
@@ -16,9 +15,11 @@ class KS(base_model):
         self.xpoints = xpoints #number of observation points
         self.lambdas = lambdas # include lambdas in allocate
 
-    def setup(self, mesh, comm = MPI.COMM_WORLD, nu = 0.05):
-        #self.mesh = PeriodicIntervalMesh(self.n, 40.0, comm = comm)
-        self.mesh = mesh
+    def setup(self, mesh=None, comm = MPI.COMM_WORLD, nu = 0.05):
+        if mesh:
+            self.mesh = mesh
+        else:
+            self.mesh = PeriodicIntervalMesh(self.n, 40.0, comm = comm)
 
         self.x, = SpatialCoordinate(self.mesh)
         self.V = FunctionSpace(self.mesh, "HER", 3)

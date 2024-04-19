@@ -3,6 +3,9 @@ from nudging import *
 import numpy as np
 import matplotlib.pyplot as plt
 from firedrake.petsc import PETSc
+
+from pyop2.mpi import MPI
+
 from pyadjoint import AdjFloat
 
 from nudging.models.stochastic_KS import KS
@@ -15,19 +18,20 @@ nsteps = 5
 xpoints = 40
 model = KS(300, nsteps, xpoints)
 
+nensemble = [5]*6
+
+MALA = False
+verbose = True
+jtfilter = jittertemp_filter(nensemble, n_jitt=4, verbose=verbose, MALA=MALA)
+
 #Load initial condition from a checkpoint file after some time idx
-with CheckpointFile("initial_sol_cp.h5", 'r') as afile:
+with CheckpointFile("initial_sol_cp.h5", 'r', comm=jtfilter.subcommunicators.comm) as afile:
     mesh = afile.load_mesh()
     u0_read = afile.load_function(mesh, name="u_out", idx=90)
 
 model.setup(mesh)
 
-MALA = False
-verbose = True
-jtfilter = jittertemp_filter(n_jitt=4, verbose=verbose, MALA=MALA)
-
-nensemble = [5]*6
-jtfilter.setup(nensemble, model)
+jtfilter.setup(model)
 
 x, = SpatialCoordinate(model.mesh)
 

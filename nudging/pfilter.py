@@ -19,10 +19,18 @@ class base_filter(object, metaclass=ABCMeta):
     ensemble = []
     new_ensemble = []
 
-    def __init__(self):
-        pass
+    def __init__(self, nensemble):
+        self.nensemble = nensemble
+        n_ensemble_partitions = len(nensemble)
+        self.nspace = int(MPI.COMM_WORLD.size/n_ensemble_partitions)
+        assert self.nspace*n_ensemble_partitions == MPI.COMM_WORLD.size
 
-    def setup(self, nensemble, model, resampler_seed=34343,
+        self.subcommunicators = fd.Ensemble(MPI.COMM_WORLD, self.nspace)
+        if isinstance(nensemble, int):
+            nensemble = tuple(nensemble for _ in
+                              range(self.subcommunicators.comm.size))
+
+    def setup(self, model, resampler_seed=34343,
               residual=False):
         """
         Construct the ensemble
@@ -31,17 +39,8 @@ class base_filter(object, metaclass=ABCMeta):
         model - the model to use
         """
         self.model = model
-        self.nensemble = nensemble
-        n_ensemble_partitions = len(nensemble)
-        self.nspace = int(MPI.COMM_WORLD.size/n_ensemble_partitions)
-        assert self.nspace*n_ensemble_partitions == MPI.COMM_WORLD.size
-
-        self.subcommunicators = fd.Ensemble(MPI.COMM_WORLD, self.nspace)
         # model needs to build the mesh in setup
         self.model.setup(self.subcommunicators.comm)
-        if isinstance(nensemble, int):
-            nensemble = tuple(nensemble for _ in
-                              range(self.subcommunicators.comm.size))
 
         # setting up ensemble
         self.ensemble_rank = self.subcommunicators.ensemble_comm.rank
@@ -201,9 +200,10 @@ class bootstrap_filter(base_filter):
 
 
 class jittertemp_filter(base_filter):
-    def __init__(self, n_jitt, delta=0.1,
+    def __init__(self, nensemble, n_jitt, delta=0.1,
                  verbose=False, MALA=False, nudging=False,
                  visualise_tape=False):
+        super().__init__(nensemble)
         self.delta = delta
         self.verbose = verbose
         self.MALA = MALA
@@ -217,9 +217,9 @@ class jittertemp_filter(base_filter):
                             + "computing the Metropolis correction for MALA."
                             + " Choose a small delta.")
 
-    def setup(self, nensemble, model, resampler_seed=34343, residual=False):
+    def setup(self, model, resampler_seed=34343, residual=False):
         super(jittertemp_filter, self).setup(
-            nensemble, model, resampler_seed=resampler_seed,
+            model, resampler_seed=resampler_seed,
             residual=residual)
         # Owned array for sending dtheta
         ecomm = self.subcommunicators.ensemble_comm
