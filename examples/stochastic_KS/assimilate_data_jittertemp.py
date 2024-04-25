@@ -4,8 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from firedrake.petsc import PETSc
 
-from pyop2.mpi import MPI
-
 from pyadjoint import AdjFloat
 
 from nudging.models.stochastic_KS import KS

@@ -40,7 +40,7 @@ class base_filter(object, metaclass=ABCMeta):
         """
         self.model = model
         # model needs to build the mesh in setup
-        self.model.setup(self.subcommunicators.comm)
+        #self.model.setup(self.subcommunicators.comm)
 
         # setting up ensemble
         self.ensemble_rank = self.subcommunicators.ensemble_comm.rank

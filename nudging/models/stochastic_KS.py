@@ -1,3 +1,4 @@
+import firedrake.adjoint as fadj
 from firedrake import *
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
@@ -126,7 +127,7 @@ class KS(base_model):
     def controls(self):
         controls_list = []
         for i in range(len(self.X)):
-            controls_list.append(Control(self.X[i]))
+            controls_list.append(fadj.Control(self.X[i]))
         return controls_list
 
     def obs(self):
