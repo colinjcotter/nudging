@@ -162,13 +162,14 @@ class base_filter(object, metaclass=ABCMeta):
                 self.ensemble[i][j].assign(self.new_ensemble[i][j])
 
     @abstractmethod
-    def assimilation_step(self, y, log_likelihood):
+    def assimilation_step(self, y, log_likelihood, diagnostics):
         """
         Advance the ensemble to the next assimilation time
         and apply the filtering algorithm
         y - a k-dimensional numpy array containing the observations
         log_likelihood - a function that computes -log(Pi(y|x))
                          for computing the filter weights
+        diagnostics - a list of diagnostics to compute
         """
         pass
 
@@ -192,7 +193,7 @@ class bootstrap_filter(base_filter):
         self.verbose = verbose
         self.residual = residual
 
-    def assimilation_step(self, y, log_likelihood):
+    def assimilation_step(self, y, log_likelihood, diagnostics):
         N = self.nensemble[self.ensemble_rank]
         # forward model step
         for i in range(N):
@@ -202,6 +203,11 @@ class bootstrap_filter(base_filter):
             Y = self.model.obs()
             self.potential_arr.dlocal[i] = fd.assemble(log_likelihood(y, Y))
         self.parallel_resample()
+        compute_diagnostics(diagnostics,
+                            self.ensemble,
+                            stage=Stage.AFTER_ASSIMILATION_STEP,
+                            descriptor=None)
+        archive_diagnostics(diagnostics)
 
 
 class jittertemp_filter(base_filter):
