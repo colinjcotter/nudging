@@ -188,7 +188,7 @@ class sim_filter(base_filter):
 
 class bootstrap_filter(base_filter):
 
-    def __init__(self, verbose=False, residual=False):
+    def __init__(self, verbose=0, residual=False):
         super().__init__()
         self.verbose = verbose
         self.residual = residual
@@ -212,7 +212,7 @@ class bootstrap_filter(base_filter):
 
 class jittertemp_filter(base_filter):
     def __init__(self, n_jitt, delta,
-                 verbose=False, MALA=False, nudging=False,
+                 verbose=0, MALA=False, nudging=False,
                  visualise_tape=False):
         self.delta = delta
         self.verbose = verbose
@@ -271,7 +271,7 @@ class jittertemp_filter(base_filter):
 
         # tape the forward model
         if not self.model_taped:
-            if self.verbose:
+            if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model")
             self.model_taped = True
             continue_annotation()
@@ -316,7 +316,7 @@ class jittertemp_filter(base_filter):
             pause_annotation()
 
         if self.nudging:
-            if self.verbose:
+            if self.verbose > 0:
                 PETSc.Sys.Print("Starting nudging")
             for i in range(N):
                 # zero the noise and lambdas in preparation for nudging
@@ -328,7 +328,7 @@ class jittertemp_filter(base_filter):
                     # update with current noise and lambda values
                     self.Jhat[step](self.ensemble[i]+[y])
                     # get the minimum over current lambda
-                    if self.verbose:
+                    if self.verbose > 1:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
                                         "local ensemble member ", i)
                     if i == 0:
@@ -336,7 +336,7 @@ class jittertemp_filter(base_filter):
                                              options={"disp": False})
                     else:
                         Xopt = fadj.minimize(self.Jhat[step])
-                    if self.verbose:
+                    if self.verbose > 2:
                         for j in range(2*nsteps+1):
                             PETSc.Sys.Print(fd.norm(Xopt[j]))
                             PETSc.Sys.Print(j, fd.norm(
@@ -380,7 +380,7 @@ class jittertemp_filter(base_filter):
             dtheta = self.adaptive_dtheta(dtheta, theta, ess_tol)
             theta += dtheta
             self.theta_temper.append(theta)
-            if self.verbose:
+            if self.verbose > 1:
                 PETSc.Sys.Print("theta", theta, "dtheta", dtheta)
 
             # resampling BEFORE jittering
@@ -392,7 +392,7 @@ class jittertemp_filter(base_filter):
             temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
-                if self.verbose:
+                if self.verbose > 1:
                     PETSc.Sys.Print("Jitter step", jitt_step)
 
                 for i in range(N):
@@ -466,12 +466,12 @@ class jittertemp_filter(base_filter):
                             stage=Stage.AFTER_JITTERING,
                             descriptor=(dtheta))
 
-        if self.verbose:
+        if self.verbose > 0:
             PETSc.Sys.Print(str(temper_count)+" tempering steps")
             PETSc.Sys.Print("Advancing ensemble")
         for i in range(N):
             self.model.run(self.ensemble[i], self.ensemble[i])
-        if self.verbose:
+        if self.verbose > 0:
             PETSc.Sys.Print("assimilation step complete")
         # trigger garbage cleanup
         PETSc.garbage_cleanup(PETSc.COMM_SELF)
