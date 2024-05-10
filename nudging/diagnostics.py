@@ -16,7 +16,7 @@ class base_diagnostic(object, metaclass=ABCMeta):
     Base class for diagnostics.
 
     :arg dtype: the dtype for the diagnostic computed for each particle.
-    :arg ecomm: the ensemble MPI subcommunicator to communicate over.
+    :arg ecomm: the Ensemble MPI communicator object.
     :arg stage: the stage of the assimilation step to compute the diagnostic.
     :arg nensemble: the time partition
     """
@@ -25,9 +25,9 @@ class base_diagnostic(object, metaclass=ABCMeta):
         self.stage = stage
         self.shared_arr = SharedArray(partition=nensemble,
                                       dtype=dtype,
-                                      comm=ecomm)
+                                      comm=ecomm.ensemble_comm)
         self.grank = ecomm.global_comm.rank
-        self.N = nensemble[ecomm.rank]
+        self.N = nensemble[ecomm.ensemble_comm.rank]
 
         # list of diagnostic values is only stored on global rank 0
         if self.grank == 0:

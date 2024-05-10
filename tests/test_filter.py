@@ -116,19 +116,13 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
             return model.obs().dat.data[0]
 
     samplesdiagnostic = samples(Stage.AFTER_ASSIMILATION_STEP,
-                                testfilter.subcommunicators.ensemble_comm,
+                                testfilter.subcommunicators,
                                 nensemble)
     diagnostics = [samplesdiagnostic]
     testfilter.assimilation_step(y, log_likelihood,
                                  diagnostics=diagnostics)
 
-    NOW NEED TO EXTRACT DIAGNOSTICS
-    
-    for i in range(nensemble[testfilter.ensemble_rank]):
-        model.u.assign(testfilter.ensemble[i][0])
-        obsdata = model.obs().dat.data[:]
-        posterior.dlocal[i] = obsdata
-    posterior.synchronise()
+    pvals = np.array(diagnostics.archive[0])
 
     pvals = posterior.data()
     bs_mean = np.mean(pvals)

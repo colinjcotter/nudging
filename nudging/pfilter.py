@@ -345,8 +345,10 @@ class jittertemp_filter(base_filter):
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(Xopt[1+step])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
-            compute_diagnostics(diagnostics, Stage.AFTER_NUDGING,
-                                descriptor=None)
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                descriptor=None,
+                                stage=Stage.AFTER_NUDGING)
         else:
             for i in range(N):
                 # generate the initial noise variables
