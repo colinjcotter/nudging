@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from enum import Flag, auto
 from .parallel_arrays import SharedArray
+import numpy as np
 
 
 class Stage(Flag):
@@ -28,6 +29,8 @@ class base_diagnostic(object, metaclass=ABCMeta):
                                       comm=ecomm.ensemble_comm)
         self.grank = ecomm.global_comm.rank
         self.N = nensemble[ecomm.ensemble_comm.rank]
+        self.dtype = dtype
+        self.Ntot = np.sum(nensemble)
 
         # list of diagnostic values is only stored on global rank 0
         if self.grank == 0:
@@ -40,6 +43,30 @@ class base_diagnostic(object, metaclass=ABCMeta):
         Take in a particle and return a diagnostic value.
         """
         pass
+
+    def get_archive(self):
+        """
+        Serialise the archive data and descriptors and return.
+        """
+        if self.grank == 0:
+            # count up all the rows in the archive
+            count = 0
+            for i in range(len(self.archive)):
+                count += len(self.archive[i])
+            # create the archive array
+            descriptors = []
+            archive = np.zeros((count, self.Ntot), dtype=self.dtype)
+
+            # copy the archive across
+            count = 0
+            for i in range(len(self.archive)):
+                for j in range(len(self.archive[i])):
+                    archive[count] = self.archive[i][j][0]
+                    descriptors.append(self.archive[i][j][1])
+                    count += 1
+            return archive, descriptors
+        else:
+            return None
 
     def gather_diagnostics(self, ensemble, descriptor):
         """
@@ -55,17 +82,17 @@ class base_diagnostic(object, metaclass=ABCMeta):
 
         # compute local values
         for i in range(self.N):
-            self.shared_arr.dlocal[i] = self.compute(ensemble[i])
+            self.shared_arr.dlocal[i] = self.compute_diagnostic(ensemble[i])
 
         # gather to ensemble rank 0
-        self.potential_arr.synchronise(root=0)
+        self.shared_arr.synchronise(root=0)
 
         # add to the list
         if self.grank == 0:
-            val = self.potential_arr.data()
+            val = self.shared_arr.data()
             self.values.append((val, descriptor))
 
-    def archive(self):
+    def archive_diagnostic(self):
         """
         Put the current values into the archive and
         empty out values. This is done at the end
@@ -92,3 +119,8 @@ def compute_diagnostics(diagnostic_list, ensemble, descriptor, stage,
     for diagnostic in diagnostic_list:
         if diagnostic.stage == stage:
             diagnostic.gather_diagnostics(ensemble, descriptor)
+
+
+def archive_diagnostics(diagnostic_list):
+    for diagnostic in diagnostic_list:
+        diagnostic.archive_diagnostic()

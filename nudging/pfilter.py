@@ -4,7 +4,7 @@ import firedrake.adjoint as fadj
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from .resampling import residual_resampling
-from .diagnostics import compute_diagnostics, Stage
+from .diagnostics import compute_diagnostics, Stage, archive_diagnostics
 import numpy as np
 from .parallel_arrays import DistributedDataLayout1D, SharedArray, OwnedArray
 from firedrake.adjoint import pause_annotation, continue_annotation, \
@@ -379,7 +379,9 @@ class jittertemp_filter(base_filter):
 
             # resampling BEFORE jittering
             self.parallel_resample(dtheta)
-            compute_diagnostics(diagnostics, Stage.AFTER_TEMPER_RESAMPLE,
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                stage=Stage.AFTER_TEMPER_RESAMPLE,
                                 descriptor=dtheta)
             temper_count += 1
 
@@ -448,10 +450,14 @@ class jittertemp_filter(base_filter):
                             potentials[i] = new_potentials[i]
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
-            compute_diagnostics(diagnostics, Stage.AFTER_ONE_JITTER_STEP,
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                stage=Stage.AFTER_ONE_JITTER_STEP,
                                 descriptor=(dtheta, jitt_step))
 
-        compute_diagnostics(diagnostics, Stage.AFTER_JITTERING,
+        compute_diagnostics(diagnostics,
+                            self.ensemble,
+                            stage=Stage.AFTER_JITTERING,
                             descriptor=(dtheta))
 
         if self.verbose:
@@ -463,5 +469,8 @@ class jittertemp_filter(base_filter):
             PETSc.Sys.Print("assimilation step complete")
         # trigger garbage cleanup
         PETSc.garbage_cleanup(PETSc.COMM_SELF)
-        compute_diagnostics(diagnostics, Stage.AFTER_ASSIMILATION_STEP,
+        compute_diagnostics(diagnostics,
+                            self.ensemble,
+                            stage=Stage.AFTER_ASSIMILATION_STEP,
                             descriptor=None)
+        archive_diagnostics(diagnostics)
