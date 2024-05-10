@@ -4,6 +4,7 @@ import firedrake.adjoint as fadj
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from .resampling import residual_resampling
+from .diagnostics import compute_diagnostics, Stage
 import numpy as np
 from .parallel_arrays import DistributedDataLayout1D, SharedArray, OwnedArray
 from firedrake.adjoint import pause_annotation, continue_annotation, \
@@ -252,7 +253,9 @@ class jittertemp_filter(base_filter):
         dtheta = self.dtheta_arr.data()[0]
         return dtheta
 
-    def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
+    def assimilation_step(self, y, log_likelihood,
+                          diagnostics=[],
+                          ess_tol=0.8):
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
@@ -342,6 +345,8 @@ class jittertemp_filter(base_filter):
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(Xopt[1+step])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
+            compute_diagnostics(diagnostics, Stage.AFTER_NUDGING,
+                                descriptor=None)
         else:
             for i in range(N):
                 # generate the initial noise variables
@@ -372,6 +377,8 @@ class jittertemp_filter(base_filter):
 
             # resampling BEFORE jittering
             self.parallel_resample(dtheta)
+            compute_diagnostics(diagnostics, Stage.AFTER_TEMPER_RESAMPLE,
+                                descriptor=dtheta)
             temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
@@ -439,6 +446,11 @@ class jittertemp_filter(base_filter):
                             potentials[i] = new_potentials[i]
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
+            compute_diagnostics(diagnostics, Stage.AFTER_ONE_JITTER_STEP,
+                                descriptor=(dtheta, jitt_step))
+
+        compute_diagnostics(diagnostics, Stage.AFTER_JITTERING,
+                            descriptor=(dtheta))
 
         if self.verbose:
             PETSc.Sys.Print(str(temper_count)+" tempering steps")
@@ -449,3 +461,5 @@ class jittertemp_filter(base_filter):
             PETSc.Sys.Print("assimilation step complete")
         # trigger garbage cleanup
         PETSc.garbage_cleanup(PETSc.COMM_SELF)
+        compute_diagnostics(diagnostics, Stage.AFTER_ASSIMILATION_STEP,
+                            descriptor=None)
