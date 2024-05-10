@@ -1,6 +1,6 @@
 from firedrake import dx, exp
 from nudging import LSDEModel, bootstrap_filter, SharedArray, \
-    jittertemp_filter
+    jittertemp_filter, base_diagnostic, Stage
 import numpy as np
 import pytest
 
@@ -109,11 +109,21 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
         ll = (y-Y)**2/S**2/2*dx
         return ll
 
-    testfilter.assimilation_step(y, log_likelihood)
+    # results in a diagnostic
+    class samples(base_diagnostic):
+        def compute_diagnostic(particle):
+            model.u.assign(particle)
+            return model.obs().dat.data[0]
 
-    # results in a shared array
-    posterior = SharedArray(partition=nensemble,
-                            comm=testfilter.subcommunicators.ensemble_comm)
+    samplesdiagnostic = samples(Stage.AFTER_ASSIMILATION_STEP,
+                                testfilter.subcommunicators.ensemble_comm,
+                                nensemble)
+    diagnostics = [samplesdiagnostic]
+    testfilter.assimilation_step(y, log_likelihood,
+                                 diagnostics=diagnostics)
+
+    NOW NEED TO EXTRACT DIAGNOSTICS
+    
     for i in range(nensemble[testfilter.ensemble_rank]):
         model.u.assign(testfilter.ensemble[i][0])
         obsdata = model.obs().dat.data[:]
