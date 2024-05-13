@@ -131,7 +131,9 @@ def compute_diagnostics(diagnostic_list, ensemble,
 
     if ndiagnostics > 0:
         if run:
-            run(ensemble, new_ensemble)
+            assert(new_ensemble)
+            for i in range(len(ensemble)):
+                run(ensemble[i], new_ensemble[i])
             use_ensemble = new_ensemble
         else:
             use_ensemble = ensemble

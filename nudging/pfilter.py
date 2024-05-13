@@ -470,19 +470,19 @@ class jittertemp_filter(base_filter):
                             potentials[i] = new_potentials[i]
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
+                compute_diagnostics(diagnostics,
+                                    self.ensemble,
+                                    descriptor=(dtheta, jitt_step),
+                                    stage=Stage.AFTER_ONE_JITTER_STEP,
+                                    run=self.model.run,
+                                    new_ensemble=self.new_ensemble)
+
             compute_diagnostics(diagnostics,
                                 self.ensemble,
-                                descriptor=(dtheta, jitt_step),
-                                stage=Stage.AFTER_ONE_JITTER_STEP,
+                                descriptor=(dtheta),
+                                stage=Stage.AFTER_JITTERING,
                                 run=self.model.run,
                                 new_ensemble=self.new_ensemble)
-
-        compute_diagnostics(diagnostics,
-                            self.ensemble,
-                            descriptor=(dtheta),
-                            stage=Stage.AFTER_JITTERING,
-                            run=self.model.run,
-                            new_ensemble=self.new_ensemble)
 
         if self.verbose > 0:
             PETSc.Sys.Print(str(temper_count)+" tempering steps")
@@ -495,6 +495,6 @@ class jittertemp_filter(base_filter):
         PETSc.garbage_cleanup(PETSc.COMM_SELF)
         compute_diagnostics(diagnostics,
                             self.ensemble,
-                            descriptor=(dtheta),
-                            stage=Stage.AFTER_JITTERING)
+                            descriptor=None,
+                            stage=Stage.AFTER_ASSIMILATION_STEP)
         archive_diagnostics(diagnostics)
