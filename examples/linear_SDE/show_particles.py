@@ -1,9 +1,10 @@
-from numpy import *
+from numpy import load
+import matplotlib.pyplot as plt
+
 before = load("before.npy")
 after = load("after.npy")
 resampled = load("resampled.npy")
 
-import matplotlib.pyplot as plt
 f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True)
 print(before)
 print(after)

@@ -1,20 +1,18 @@
 from firedrake import dx, exp
-from nudging import LSDEModel, bootstrap_filter, SharedArray, \
+from nudging import LSDEModel, \
     jittertemp_filter, base_diagnostic, Stage
 import numpy as np
-import pytest
-
 
 # model
 # multiply by A and add D
 T = 1.
-nsteps = 20
+nsteps = 5
 dt = T/nsteps
 A = 1.
 D = 2.
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 10 #  10000
+p_per_rank = 100  # 10000
 nranks = 10
 nensemble = [p_per_rank]*nranks
 
@@ -39,9 +37,11 @@ for i in range(nensemble[myfilter.ensemble_rank]):
 # observation noise standard deviation
 S = 0.3
 
+
 def log_likelihood(y, Y):
     ll = (y-Y)**2/S**2/2*dx
     return ll
+
 
 # results in a diagnostic
 class samples(base_diagnostic):
@@ -49,15 +49,16 @@ class samples(base_diagnostic):
         model.u.assign(particle[0])
         return model.obs().dat.data[0]
 
+
 resamplingsamples = samples(Stage.AFTER_ASSIMILATION_STEP,
-                       myfilter.subcommunicators,
-                       nensemble)
+                            myfilter.subcommunicators,
+                            nensemble)
 nudgingsamples = samples(Stage.AFTER_NUDGING,
-                       myfilter.subcommunicators,
-                       nensemble)
+                         myfilter.subcommunicators,
+                         nensemble)
 nolambdasamples = samples(Stage.WITHOUT_LAMBDAS,
-                       myfilter.subcommunicators,
-                       nensemble)
+                          myfilter.subcommunicators,
+                          nensemble)
 
 diagnostics = [nudgingsamples,
                resamplingsamples,
@@ -71,8 +72,6 @@ if myfilter.subcommunicators.global_comm.rank == 0:
     after, descriptors = nudgingsamples.get_archive()
     resampled, descriptors = resamplingsamples.get_archive()
 
-    print(before.shape, after.shape, resampled.shape)
-    
     np.save("before", before)
     np.save("after", after)
     np.save("resampled", resampled)
@@ -88,5 +87,5 @@ if myfilter.subcommunicators.global_comm.rank == 0:
     b = sigsq + d**2*exp(2*A)
     tmean = (b**2*y0 + S**2*a)/(b**2 + S**2)
     tvar = b**2*S**2/(b**2 + S**2)
-    
+
     print(tmean, bs_mean, tvar, bs_var)
