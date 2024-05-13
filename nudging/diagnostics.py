@@ -6,6 +6,7 @@ import numpy as np
 
 class Stage(Flag):
     AFTER_NUDGING = auto()
+    WITHOUT_LAMBDAS = auto()  # get diagnostics with lambda set to zero
     AFTER_TEMPER_RESAMPLE = auto()
     AFTER_ONE_JITTER_STEP = auto()
     AFTER_JITTERING = auto()
@@ -103,8 +104,10 @@ class base_diagnostic(object, metaclass=ABCMeta):
             self.values = []
 
 
-def compute_diagnostics(diagnostic_list, ensemble, descriptor, stage,
-                        other_data={}):
+def compute_diagnostics(diagnostic_list, ensemble,
+                        descriptor, stage,
+                        other_data={}, run=None,
+                        new_ensemble=None):
     """
     Compute all diagnostics in diagnostic_list labelled with stage
 
@@ -112,13 +115,30 @@ def compute_diagnostics(diagnostic_list, ensemble, descriptor, stage,
     (these are inherited from base_diagnostic)
     arg: stage - a string indicating the stage where diagnostics are called.
     arg: ensemble - the (local part of) the ensemble of particles (list)
+    - the values at the start of the assimilation window
+    arg: new_ensemble - the (local part of) the ensemble of particles (list)
+    - space to write output of run to
+    arg: run - the run method - model is only run if we need it. If
+    None, we use ensemble.
     arg: descriptor - a descriptive string describing when the diagnostic
     was called
     """
 
+    ndiagnostics = 0
     for diagnostic in diagnostic_list:
         if diagnostic.stage == stage:
-            diagnostic.gather_diagnostics(ensemble, descriptor)
+            ndiagnostics += 1
+
+    if ndiagnostics > 0:
+        if run:
+            run(ensemble, new_ensemble)
+            use_ensemble = new_ensemble
+        else:
+            use_ensemble = ensemble
+
+        for diagnostic in diagnostic_list:
+            if diagnostic.stage == stage:
+                diagnostic.gather_diagnostics(use_ensemble, descriptor)
 
 
 def archive_diagnostics(diagnostic_list):

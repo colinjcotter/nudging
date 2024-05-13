@@ -351,10 +351,22 @@ class jittertemp_filter(base_filter):
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(Xopt[1+step])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
+
             compute_diagnostics(diagnostics,
                                 self.ensemble,
                                 descriptor=None,
-                                stage=Stage.AFTER_NUDGING)
+                                stage=Stage.AFTER_NUDGING,
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
+
+            self.model.lambdas = False
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                descriptor=None,
+                                stage=Stage.WITHOUT_LAMBDAS,
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
+            self.model.lambdas = True
         else:
             for i in range(N):
                 # generate the initial noise variables
@@ -387,8 +399,10 @@ class jittertemp_filter(base_filter):
             self.parallel_resample(dtheta)
             compute_diagnostics(diagnostics,
                                 self.ensemble,
+                                descriptor=(dtheta),
                                 stage=Stage.AFTER_TEMPER_RESAMPLE,
-                                descriptor=dtheta)
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
             temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
@@ -458,13 +472,17 @@ class jittertemp_filter(base_filter):
                                             self.ensemble[i])
             compute_diagnostics(diagnostics,
                                 self.ensemble,
+                                descriptor=(dtheta, jitt_step),
                                 stage=Stage.AFTER_ONE_JITTER_STEP,
-                                descriptor=(dtheta, jitt_step))
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
 
         compute_diagnostics(diagnostics,
                             self.ensemble,
+                            descriptor=(dtheta),
                             stage=Stage.AFTER_JITTERING,
-                            descriptor=(dtheta))
+                            run=self.model.run,
+                            new_ensemble=self.new_ensemble)
 
         if self.verbose > 0:
             PETSc.Sys.Print(str(temper_count)+" tempering steps")
@@ -477,6 +495,6 @@ class jittertemp_filter(base_filter):
         PETSc.garbage_cleanup(PETSc.COMM_SELF)
         compute_diagnostics(diagnostics,
                             self.ensemble,
-                            stage=Stage.AFTER_ASSIMILATION_STEP,
-                            descriptor=None)
+                            descriptor=(dtheta),
+                            stage=Stage.AFTER_JITTERING)
         archive_diagnostics(diagnostics)
