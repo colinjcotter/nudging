@@ -23,9 +23,8 @@ verbose = True
 jtfilter = jittertemp_filter(nensemble, n_jitt=4, verbose=verbose, MALA=MALA)
 
 #Load initial condition from a checkpoint file after some time idx
-with CheckpointFile("initial_sol_cp.h5", 'r', comm=jtfilter.subcommunicators.comm) as afile:
+with CheckpointFile("initial_sol_mixing.h5", 'r', comm=jtfilter.subcommunicators.comm) as afile:
     mesh = afile.load_mesh()
-    u0_read = afile.load_function(mesh, name="u_out", idx=90)
 
 model.setup(mesh)
 
@@ -51,8 +50,8 @@ for i in range(nensemble[jtfilter.ensemble_rank]):
     #u = jtfilter.ensemble[i][0]
     #u.project(u0_exp)
 
-    #with CheckpointFile("initial_sol_cp.h5", 'r') as afile:
-    #    u0_read = afile.load_function(model.mesh, name="u_out", idx=90)
+    with CheckpointFile("initial_sol_mixing.h5", 'r') as afile:
+        u0_read = afile.load_function(model.mesh, name="u_out", idx=i*2000)
 
     u = jtfilter.ensemble[i][0]
     u.project(u0_read)

@@ -17,9 +17,9 @@ xpoints = 40
 model = KS(300, nsteps, xpoints)
 
 #Load initial condition from a checkpoint file after some time idx
-with CheckpointFile("initial_sol_cp.h5", 'r') as afile:
+with CheckpointFile("initial_sol_mixing.h5", 'r') as afile:
     mesh = afile.load_mesh()
-    u0_read = afile.load_function(mesh, name="u_out", idx=90)
+    u0_read = afile.load_function(mesh, name="u_out", idx=2000)
 
 #set up the mesh from the cp file
 model.setup(mesh)

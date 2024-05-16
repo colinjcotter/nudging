@@ -40,7 +40,7 @@ class KS(base_model):
         self.w1.assign(self.w0)
 
         #set the space-time noise
-        self.V_ = FunctionSpace(self.mesh, "DG", 0)
+        self.V_ = FunctionSpace(self.mesh, "CG", 1)
         self.U = Function(self.V_)
         self.dW = self.dt**(1/2)*self.U
 
@@ -48,9 +48,9 @@ class KS(base_model):
         w0 = self.w0
         w1 = self.w1
         dt = self.dt
-        L = ((w1-w0) * self.phi + dt*(self.w1.dx(0)).dx(0)* \
-            (self.phi.dx(0)).dx(0) - dt*self.w1.dx(0)* self.phi.dx(0) \
-            -dt*0.5 * self.w1*self.w1*self.phi.dx(0) + (self.dW*self.phi)) * dx
+        L = ((w1-w0) * self.phi + dt * 0.02923 * (self.w1.dx(0)).dx(0) * \
+            (self.phi.dx(0)).dx(0) - dt * self.w1.dx(0) * self.phi.dx(0) \
+            -dt * 0.5 * self.w1 * self.w1 * self.phi.dx(0) + (self.dW * self.phi)) * dx
 
         #define a problem and solver over which we will iterate in a loop
         uprob = NonlinearVariationalProblem(L, self.w1)
