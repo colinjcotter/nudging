@@ -21,34 +21,36 @@ def log_likelihood(y, Y):
     ll = (y-Y)**2/0.05**2/2*dx
     return ll
 
-#Load data
-y_exact = np.load('y_true.npy')
-y = np.load('y_obs.npy')
-#N_obs = y.shape[0]
-
-def sample_initial_dist():
-    i = random.randint(1, 40)
+def sample_initial_dist(i):
+    #i = random.randint(1, 100)
     with CheckpointFile("initial_sol_mixing.h5", 'r') as afile:
         u0_read = afile.load_function(model.mesh, name="u_out", idx=i*2000)
     return u0_read
 
 rho = 0.9998
-N_steps = 1000
+N_steps = 100
 
-u=[sample_initial_dist()]
+V = FunctionSpace(model.mesh, 'CG', 1)
+proposal = Function(V)
+u = sample_initial_dist(1)
+
+#Load data
+y = np.load('y_obs.npy')
+yVOM = Function(model.VVOM)
+#yVOM = Function(V)
+yVOM.dat.data[:] = y[0, :] #set at time 0
+
+
 for m in range(1, N_steps):
-    proposal = rho * u[m-1] + (1-rho**2)**(0.5) * sample_initial_dist()
+    prop = rho * u + (1-rho**2)**(0.5) * sample_initial_dist(m+1)
+    proposal.assign(prop)
     #acceptance step
-    prob = min(1, math.exp(log_likelihood(y_exact, proposal)) / math.exp(log_likelihood(y_exact, u[m-1])))
+    prob = min(1, math.exp(log_likelihood(yVOM, proposal)) / math.exp(log_likelihood(yVOM, u)))
     if random.random() > prob:
-        u.append(proposal)
-    else:
-        u.append(u[m-1])
+        u = proposal
 
 burnout = 100
 #store the solutions in a checkpoint file
 with CheckpointFile("mcmc_functions.h5", 'w') as afile:
     afile.save_mesh(model.mesh)
-for i in range(burnout, len(u)):
-    with CheckpointFile("mcmc_functions.h5", 'w') as afile:
-        afile.save_function(u[i])
+    afile.save_function(u) #compare this with the initial output of the particle filter
