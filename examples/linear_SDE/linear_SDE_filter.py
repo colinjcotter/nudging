@@ -6,13 +6,13 @@ import numpy as np
 # model
 # multiply by A and add D
 T = 1.
-nsteps = 5
+nsteps = 10
 dt = T/nsteps
 A = 1.
 D = 2.
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 100  # 10000
+p_per_rank = 10000  # 10000
 nranks = 10
 nensemble = [p_per_rank]*nranks
 
