@@ -22,7 +22,7 @@ u0.project(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+e
 Q = FunctionSpace(model.mesh, 'CG', 1)
 u_out = Function(Q, name="u_out")
 u_out.interpolate(X_truth[0])
-N_obs = 20050
+N_obs = 20000
 
 with CheckpointFile("initial_sol_mixing.h5", 'w') as afile:
     afile.save_mesh(model.mesh)

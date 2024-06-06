@@ -17,6 +17,9 @@ with CheckpointFile("initial_sol_mixing.h5", 'r') as afile:
     mesh = afile.load_mesh()
 model.setup(mesh)
 
+X_truth = model.allocate()
+#u0 = X_truth[0]
+
 def log_likelihood(y, Y):
     ll = (y-Y)**2/0.05**2/2*dx
     return ll
@@ -28,29 +31,27 @@ def sample_initial_dist(i):
     return u0_read
 
 rho = 0.9998
-N_steps = 100
+N_steps = 50
 
 V = FunctionSpace(model.mesh, 'CG', 1)
 proposal = Function(V)
-u = sample_initial_dist(1)
 
-#Load data
-y = np.load('y_obs.npy')
-yVOM = Function(model.VVOM)
-#yVOM = Function(V)
-yVOM.dat.data[:] = y[0, :] #set at time 0
-
+X_truth[0] = sample_initial_dist(1)
 
 for m in range(1, N_steps):
-    prop = rho * u + (1-rho**2)**(0.5) * sample_initial_dist(m+1)
+    model.randomize(X_truth)
+    model.run(X_truth, X_truth)
+    y_true = model.obs().dat.data[:]
+
+    prop = rho * X_truth[0] + (1-rho**2)**(0.5) * sample_initial_dist(m+1)
     proposal.assign(prop)
     #acceptance step
-    prob = min(1, math.exp(log_likelihood(yVOM, proposal)) / math.exp(log_likelihood(yVOM, u)))
+    prob = min(1, math.exp(log_likelihood(y_true, proposal)) / math.exp(log_likelihood(y_true, X_truth[0])))
     if random.random() > prob:
-        u = proposal
+        X_truth[0] = proposal
 
-burnout = 100
+#burnout = 100
 #store the solutions in a checkpoint file
 with CheckpointFile("mcmc_functions.h5", 'w') as afile:
     afile.save_mesh(model.mesh)
-    afile.save_function(u) #compare this with the initial output of the particle filter
+    afile.save_function(X_truth[0]) #compare this with the initial output of the particle filter
