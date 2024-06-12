@@ -95,16 +95,12 @@ class base_filter(object, metaclass=ABCMeta):
             self.potential_arr.synchronise(root=0)
             if self.ensemble_rank == 0:
                 potentials = self.potential_arr.data()
-                if self.verbose:
-                    PETSc.Sys.Print("potentials ",potentials )
                 # renormalise
                 weights = np.exp(-dtheta*potentials
                                  - logsumexp(-dtheta*potentials))
-                
                 assert np.abs(np.sum(weights)-1) < 1.0e-8
                 self.ess = 1/np.sum(weights**2)
                 if self.verbose:
-                    #PETSc.Sys.Print("weight ", weights )
                     PETSc.Sys.Print("ESS "
                                     + str(100*self.ess/np.sum(self.nensemble))
                                     + "%")
@@ -354,7 +350,7 @@ class jittertemp_filter(base_filter):
                 # generate the initial noise variables
                 self.model.randomize(self.ensemble[i])
 
-        # nudging without tempering and jittering 
+        # nudging without tempering and jittering
         # Compute initial potentials
         for i in range(N):
             # put result of forward model into ensemble
@@ -364,9 +360,8 @@ class jittertemp_filter(base_filter):
             if self.nudging:
                 self.potential_arr.dlocal[i] += self.model.lambda_functional()
         self.parallel_resample()
-                
 
-        theta = 1.0 # keep theta 1.0 to avoid tempering
+        theta = 1.0
         temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta

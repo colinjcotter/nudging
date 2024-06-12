@@ -6,14 +6,16 @@ import numpy as np
 
 class Euler_SD(base_model):
     def __init__(self, n_xy_pts, nsteps, dt,
-                 noise_scale, mesh=False, lambdas=False, seed=12353):
+                 noise_scale, mesh=False,
+                 salt=False, lambdas=False, seed=123553):
         self.n = n_xy_pts
         self.nsteps = nsteps
         self.dt = dt
-        self.lambdas = lambdas  # include lambdas in allocate
-        self.seed = seed
         self.noise_scale = noise_scale
         self.mesh = mesh
+        self.salt = salt
+        self.lambdas = lambdas
+        self.seed = seed
 
     def setup(self, comm=MPI.COMM_WORLD):
         r = 0.01
@@ -29,6 +31,10 @@ class Euler_SD(base_model):
         # FE spaces
         self.Vcg = fd.FunctionSpace(self.mesh, "CG", 1)  # Streamfunctions
         self.Vdg = fd.FunctionSpace(self.mesh, "DQ", 1)  # PV space
+        self.Vu = fd.VectorFunctionSpace(self.mesh, "DQ", 1)  # velocity
+        self.u_vel = fd.Function(self.Vu)
+        self.phi_fn = fd.Function(self.Vcg)
+        self.phi_mod_fn = fd.Function(self.Vcg)
 
         self.q0 = fd.Function(self.Vdg)
         self.q1 = fd.Function(self.Vdg)
@@ -59,31 +65,41 @@ class Euler_SD(base_model):
         dW_phi = fd.TestFunction(self.Vcg)
         dU = fd.TrialFunction(self.Vcg)
 
-        cell_area = fd.CellVolume(self.mesh)
-        alpha_w = (1/cell_area**0.5)
-        # kappa_inv_sq = 2*cell_area**2
+        # cell_area = fd.CellVolume(self.mesh)
+        # alpha_w =(1/cell_area**0.5)
+        kappa_inv_sq = fd.Constant(1.0)
 
-        dU_1 = fd.Function(self.Vcg)
-        dU_2 = fd.Function(self.Vcg)
-        dU_3 = fd.Function(self.Vcg)
+        self.dU_1 = fd.Function(self.Vcg)
+        self.dU_2 = fd.Function(self.Vcg)
+        self.dU_3 = fd.Function(self.Vcg)
 
-        a_dW = fd.inner(fd.grad(dU), fd.grad(dW_phi))*dx \
+        # zero boundary condition for noise
+        bc = fd.DirichletBC(self.Vcg, 0, "on_boundary")
+        a_dW = kappa_inv_sq*fd.inner(fd.grad(dU), fd.grad(dW_phi))*dx \
             + dU*dW_phi*dx
-        L_w1 = alpha_w*self.dW*dW_phi*dx
-        w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, dU_1)
+        L_w1 = self.dW*dW_phi*dx
+        w_prob1 = fd.LinearVariationalProblem(a_dW, L_w1, self.dU_1, bcs=bc,
+                                              constant_jacobian=True)
         self.wsolver1 = fd.LinearVariationalSolver(w_prob1,
                                                    solver_parameters=sp)
-        L_w2 = dU_1*dW_phi*dx
-        w_prob2 = fd.LinearVariationalProblem(a_dW, L_w2, dU_2)
+        L_w2 = self.dU_1*dW_phi*dx
+        w_prob2 = fd.LinearVariationalProblem(a_dW, L_w2, self.dU_2, bcs=bc,
+                                              constant_jacobian=True)
         self.wsolver2 = fd.LinearVariationalSolver(w_prob2,
                                                    solver_parameters=sp)
-        L_w3 = dU_2*dW_phi*dx
-        w_prob3 = fd.LinearVariationalProblem(a_dW, L_w3, dU_3)
+        L_w3 = self.dU_2*dW_phi*dx
+        w_prob3 = fd.LinearVariationalProblem(a_dW, L_w3, self.dU_3, bcs=bc,
+                                              constant_jacobian=True)
         self.wsolver3 = fd.LinearVariationalSolver(w_prob3,
                                                    solver_parameters=sp)
         # Add noise with stream function to get stochastic velocity
         Dt = self.dt
-        psi_mod = self.psi0*Dt+self.noise_scale*dU_3*Dt**0.5  # SALT noise
+        if self.salt:
+            psi_mod = self.psi0+self.noise_scale*self.dU_3*Dt**0.5  # SALTnoise
+        else:
+            psi_mod = self.psi0
+
+        self.psi_mod = psi_mod
 
         def gradperp(u):
             return fd.as_vector((-u.dx(1), u.dx(0)))
@@ -99,13 +115,15 @@ class Euler_SD(base_model):
         Q.interpolate(0.1*fd.sin(8*fd.pi*x[0]))
         # timestepping equation
         a_mass = p*q*dx
-        a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - Dt*p*(Q-r*q))*dx
+        a_int = (fd.dot(fd.grad(p), -q*gradperp(psi_mod)) - p*(Q-r*q))*dx
+        if not self.salt:
+            a_int += p*self.noise_scale*self.dU_3*Dt**0.5*dx
         a_flux = (fd.dot(fd.jump(p), un("+")*q("+") - un("-")*q("-")))*dS
-        arhs = a_mass - (a_int + a_flux)
+        arhs = a_mass - Dt*(a_int + a_flux)
 
         q_prob = fd.LinearVariationalProblem(a_mass,
                                              fd.action(arhs, self.q1),
-                                             self.dq1)
+                                             self.dq1, constant_jacobian=True)
         dgsp = {"ksp_type": "preonly",
                 "pc_type": "bjacobi",
                 "sub_pc_type": "ilu"}
@@ -121,8 +139,8 @@ class Euler_SD(base_model):
         xv, yv = np.meshgrid(x_point, y_point)
         x_obs_list = np.vstack([xv.ravel(), yv.ravel()]).T.tolist()
         VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
-        self.VVOM_out = fd.VectorFunctionSpace(VOM.input_ordering, "DG", 0)
-        self.VVOM = fd.VectorFunctionSpace(VOM, "DG", 0)
+        self.VVOM_out = fd.FunctionSpace(VOM.input_ordering, "DG", 0)
+        self.VVOM = fd.FunctionSpace(VOM, "DG", 0)
 
     def run(self, X0, X1):
         for i in range(len(X0)):
@@ -139,19 +157,23 @@ class Euler_SD(base_model):
             self.wsolver2.solve()
             self.wsolver3.solve()
 
-            # Compute the streamfunction for the known value of q0
             self.q1.assign(self.q0)
             self.psi_solver.solve()
+
+            self.u_vel.project(self.gradperp(self.psi_mod))
             self.q_solver.solve()
 
             # Find intermediate solution q^(1)
             self.q1.assign(self.dq1)
             self.psi_solver.solve()
+            self.u_vel.project(self.gradperp(self.psi_mod))
             self.q_solver.solve()
 
             # Find intermediate solution q^(2)
             self.q1.assign((3/4)*self.q0 + (1/4)*self.dq1)
             self.psi_solver.solve()
+
+            self.u_vel.project(self.gradperp(self.psi_mod))
             self.q_solver.solve()
 
             # Find new solution q^(n+1)
@@ -166,11 +188,11 @@ class Euler_SD(base_model):
         return controls_list
 
     def obs(self):
-        self.q1.assign(self.q0)  # assigned at time t+1
-        self.psi_solver.solve()  # solved at t+1 for psi
-        u = self.gradperp(self.psi0)  # evaluated velocity at time t+1
+        # self.q1.assign(self.q0)  # assigned at time t+1
+        # self.psi_solver.solve()  # solved at t+1 for psi
+        # u = self.gradperp(self.psi0)  # evaluated velocity at time t+1
         Y = fd.Function(self.VVOM)
-        Y.interpolate(u)
+        Y.interpolate(self.q0)
         return Y
 
     def allocate(self):
