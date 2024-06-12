@@ -101,7 +101,7 @@ class Euler_mixSD(base_model):
 
         # SALT noise
         if self.salt:
-            psi_mod = psih + self.noise_scale*self.dU_3*Dt**2
+            psi_mod = psih + self.noise_scale*self.dU_3*Dt**0.5
         else:
             psi_mod = psih
 
@@ -120,7 +120,7 @@ class Euler_mixSD(base_model):
             + (fd.inner(fd.grad(self.psi1), fd.grad(phi)))*dx\
             + self.psi1*phi*dx + self.q1*phi*dx
         if not self.salt:
-            F += self.noise_scale*p*self.dU_3*Dt**2*dx
+            F += self.noise_scale*p*self.dU_3*Dt**0.5*dx
 
         # timestepping solver
         qphi_prob = fd.NonlinearVariationalProblem(F, self.qpsi1, bcs=bc)
