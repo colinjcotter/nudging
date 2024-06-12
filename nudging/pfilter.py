@@ -85,6 +85,7 @@ class base_filter(object, metaclass=ABCMeta):
                 break
         return rank
 
+    @PETSc.Log.EventDecorator()
     def parallel_resample(self, dtheta=1, s=None):
 
         if s:
@@ -238,6 +239,8 @@ class jittertemp_filter(base_filter):
                 # renormalise
                 weights = np.exp(-dtheta*potentials
                                  - logsumexp(-dtheta*potentials))
+                # if self.verbose:
+                #     PETSc.Sys.Print("weight ", weights )
                 weights /= np.sum(weights)
                 ess = 1/np.sum(weights**2)
                 if ess < ess_tol*sum(self.nensemble):
@@ -327,13 +330,13 @@ class jittertemp_filter(base_filter):
                                              options={"disp": False})
                     else:
                         Xopt = fadj.minimize(self.Jhat[step])
-                    if self.verbose:
-                        for j in range(2*nsteps+1):
-                            PETSc.Sys.Print(fd.norm(Xopt[j]))
-                            PETSc.Sys.Print(j, fd.norm(
-                                self.ensemble[i][j]-Xopt[j]),
-                                "nil checks")
-                        PETSc.Sys.Print(j, fd.norm(y-Xopt[j+1]), "Y checks")
+                    # if self.verbose:
+                    #     for j in range(2*nsteps+1):
+                    #         PETSc.Sys.Print(fd.norm(Xopt[j]))
+                    #         PETSc.Sys.Print(j, fd.norm(
+                    #             self.ensemble[i][j]-Xopt[j]),
+                    #             "nil checks")
+                    #     PETSc.Sys.Print(j, fd.norm(y-Xopt[j+1]), "Y checks")
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(
                         Xopt[nsteps+1+step])
@@ -347,11 +350,23 @@ class jittertemp_filter(base_filter):
                 # generate the initial noise variables
                 self.model.randomize(self.ensemble[i])
 
-        theta = .0
+        # nudging without tempering and jittering
+        # Compute initial potentials
+        for i in range(N):
+            # put result of forward model into ensemble
+            self.model.run(self.ensemble[i], self.ensemble[i])
+            Y = self.model.obs()
+            self.potential_arr.dlocal[i] = fd.assemble(log_likelihood(y, Y))
+            if self.nudging:
+                self.potential_arr.dlocal[i] += self.model.lambda_functional()
+        self.parallel_resample()
+
+        theta = 1.0
         temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta
-
+            if self.verbose:
+                PETSc.Sys.Print("Inside tempering loop ")
             # Compute initial potentials
             for i in range(N):
                 # put result of forward model into new_ensemble
