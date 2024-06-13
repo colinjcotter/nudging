@@ -1,6 +1,6 @@
 from firedrake import dx, exp
-from nudging import LSDEModel, bootstrap_filter, SharedArray, \
-    jittertemp_filter
+from nudging import LSDEModel, bootstrap_filter, \
+    jittertemp_filter, base_diagnostic, Stage
 import numpy as np
 import pytest
 
@@ -83,7 +83,6 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
     # then
     # x(1)|y ~ N((b^2y + S^2a)/(b^2+S^2), (b^2S^2)/(b^2 + S^2))
 
-    print(p_per_rank, nranks)
     nensemble = [p_per_rank]*nranks
     filterargs["nensemble"] = nensemble
     filterargs["model"] = model
@@ -109,33 +108,36 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
         ll = (y-Y)**2/S**2/2*dx
         return ll
 
-    testfilter.assimilation_step(y, log_likelihood)
+    # results in a diagnostic
+    class samples(base_diagnostic):
+        def compute_diagnostic(self, particle):
+            model.u.assign(particle[0])
+            return model.obs().dat.data[0]
 
-    # results in a shared array
-    posterior = SharedArray(partition=nensemble,
-                            comm=testfilter.subcommunicators.ensemble_comm)
-    for i in range(nensemble[testfilter.ensemble_rank]):
-        model.u.assign(testfilter.ensemble[i][0])
-        obsdata = model.obs().dat.data[:]
-        posterior.dlocal[i] = obsdata
-    posterior.synchronise()
+    samplesdiagnostic = samples(Stage.AFTER_ASSIMILATION_STEP,
+                                testfilter.subcommunicators,
+                                nensemble)
+    diagnostics = [samplesdiagnostic]
+    testfilter.assimilation_step(y, log_likelihood,
+                                 diagnostics=diagnostics)
 
-    pvals = posterior.data()
-    bs_mean = np.mean(pvals)
-    bs_var = np.var(pvals)
+    if testfilter.subcommunicators.global_comm.rank == 0:
+        pvals, descriptors = samplesdiagnostic.get_archive()
+        bs_mean = np.mean(pvals)
+        bs_var = np.var(pvals)
 
-    # analytical formula
-    # x(1)|y ~ N((b^2y + S^2a)/(b^2+S^2), (b^2S^2)/(b^2 + S^2))
-    # where a = c*exp(A), b = (sig^2+d^2*exp(2A))
-    # sig^2 = (D^2/2A)*(e^{2A} - 1)
-    a = c*exp(A)
-    sigsq = D**2/2/A*(exp(2*A) - 1)  # t = 1
-    b = sigsq + d**2*exp(2*A)
-    tmean = (b**2*y0 + S**2*a)/(b**2 + S**2)
-    tvar = b**2*S**2/(b**2 + S**2)
+        # analytical formula
+        # x(1)|y ~ N((b^2y + S^2a)/(b^2+S^2), (b^2S^2)/(b^2 + S^2))
+        # where a = c*exp(A), b = (sig^2+d^2*exp(2A))
+        # sig^2 = (D^2/2A)*(e^{2A} - 1)
+        a = c*exp(A)
+        sigsq = D**2/2/A*(exp(2*A) - 1)  # t = 1
+        b = sigsq + d**2*exp(2*A)
+        tmean = (b**2*y0 + S**2*a)/(b**2 + S**2)
+        tvar = b**2*S**2/(b**2 + S**2)
 
-    assert np.abs(tmean - bs_mean) < mtol
-    assert np.abs(tvar - bs_var) < vtol
+        assert np.abs(tmean - bs_mean) < mtol
+        assert np.abs(tvar - bs_var) < vtol
 
 
 @pytest.mark.parallel(nprocs=5)

@@ -4,6 +4,7 @@ import firedrake.adjoint as fadj
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from .resampling import residual_resampling
+from .diagnostics import compute_diagnostics, Stage, archive_diagnostics
 import numpy as np
 from .parallel_arrays import DistributedDataLayout1D, SharedArray, OwnedArray
 from firedrake.adjoint import pause_annotation, continue_annotation, \
@@ -161,13 +162,14 @@ class base_filter(object, metaclass=ABCMeta):
                 self.ensemble[i][j].assign(self.new_ensemble[i][j])
 
     @abstractmethod
-    def assimilation_step(self, y, log_likelihood):
+    def assimilation_step(self, y, log_likelihood, diagnostics):
         """
         Advance the ensemble to the next assimilation time
         and apply the filtering algorithm
         y - a k-dimensional numpy array containing the observations
         log_likelihood - a function that computes -log(Pi(y|x))
                          for computing the filter weights
+        diagnostics - a list of diagnostics to compute
         """
         pass
 
@@ -186,12 +188,12 @@ class sim_filter(base_filter):
 
 class bootstrap_filter(base_filter):
 
-    def __init__(self, verbose=False, residual=False):
+    def __init__(self, verbose=0, residual=False):
         super().__init__()
         self.verbose = verbose
         self.residual = residual
 
-    def assimilation_step(self, y, log_likelihood):
+    def assimilation_step(self, y, log_likelihood, diagnostics):
         N = self.nensemble[self.ensemble_rank]
         # forward model step
         for i in range(N):
@@ -201,11 +203,16 @@ class bootstrap_filter(base_filter):
             Y = self.model.obs()
             self.potential_arr.dlocal[i] = fd.assemble(log_likelihood(y, Y))
         self.parallel_resample()
+        compute_diagnostics(diagnostics,
+                            self.ensemble,
+                            stage=Stage.AFTER_ASSIMILATION_STEP,
+                            descriptor=None)
+        archive_diagnostics(diagnostics)
 
 
 class jittertemp_filter(base_filter):
     def __init__(self, n_jitt, delta,
-                 verbose=False, MALA=False, nudging=False,
+                 verbose=0, MALA=False, nudging=False,
                  visualise_tape=False):
         self.delta = delta
         self.verbose = verbose
@@ -252,7 +259,9 @@ class jittertemp_filter(base_filter):
         dtheta = self.dtheta_arr.data()[0]
         return dtheta
 
-    def assimilation_step(self, y, log_likelihood, ess_tol=0.8):
+    def assimilation_step(self, y, log_likelihood,
+                          diagnostics=[],
+                          ess_tol=0.8):
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
@@ -262,7 +271,7 @@ class jittertemp_filter(base_filter):
 
         # tape the forward model
         if not self.model_taped:
-            if self.verbose:
+            if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model")
             self.model_taped = True
             continue_annotation()
@@ -307,7 +316,7 @@ class jittertemp_filter(base_filter):
             pause_annotation()
 
         if self.nudging:
-            if self.verbose:
+            if self.verbose > 0:
                 PETSc.Sys.Print("Starting nudging")
             for i in range(N):
                 # zero the noise and lambdas in preparation for nudging
@@ -319,7 +328,7 @@ class jittertemp_filter(base_filter):
                     # update with current noise and lambda values
                     self.Jhat[step](self.ensemble[i]+[y])
                     # get the minimum over current lambda
-                    if self.verbose:
+                    if self.verbose > 1:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
                                         "local ensemble member ", i)
                     if i == 0:
@@ -327,7 +336,7 @@ class jittertemp_filter(base_filter):
                                              options={"disp": False})
                     else:
                         Xopt = fadj.minimize(self.Jhat[step])
-                    if self.verbose:
+                    if self.verbose > 2:
                         for j in range(2*nsteps+1):
                             PETSc.Sys.Print(fd.norm(Xopt[j]))
                             PETSc.Sys.Print(j, fd.norm(
@@ -342,6 +351,22 @@ class jittertemp_filter(base_filter):
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(Xopt[1+step])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
+
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                descriptor=None,
+                                stage=Stage.AFTER_NUDGING,
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
+
+            self.model.lambdas = False
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                descriptor=None,
+                                stage=Stage.WITHOUT_LAMBDAS,
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
+            self.model.lambdas = True
         else:
             for i in range(N):
                 # generate the initial noise variables
@@ -367,15 +392,21 @@ class jittertemp_filter(base_filter):
             dtheta = self.adaptive_dtheta(dtheta, theta, ess_tol)
             theta += dtheta
             self.theta_temper.append(theta)
-            if self.verbose:
+            if self.verbose > 1:
                 PETSc.Sys.Print("theta", theta, "dtheta", dtheta)
 
             # resampling BEFORE jittering
             self.parallel_resample(dtheta)
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                descriptor=(dtheta),
+                                stage=Stage.AFTER_TEMPER_RESAMPLE,
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
             temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
-                if self.verbose:
+                if self.verbose > 1:
                     PETSc.Sys.Print("Jitter step", jitt_step)
 
                 for i in range(N):
@@ -439,13 +470,31 @@ class jittertemp_filter(base_filter):
                             potentials[i] = new_potentials[i]
                             self.model.copy(self.proposal_ensemble[i],
                                             self.ensemble[i])
+                compute_diagnostics(diagnostics,
+                                    self.ensemble,
+                                    descriptor=(dtheta, jitt_step),
+                                    stage=Stage.AFTER_ONE_JITTER_STEP,
+                                    run=self.model.run,
+                                    new_ensemble=self.new_ensemble)
 
-        if self.verbose:
+            compute_diagnostics(diagnostics,
+                                self.ensemble,
+                                descriptor=(dtheta),
+                                stage=Stage.AFTER_JITTERING,
+                                run=self.model.run,
+                                new_ensemble=self.new_ensemble)
+
+        if self.verbose > 0:
             PETSc.Sys.Print(str(temper_count)+" tempering steps")
             PETSc.Sys.Print("Advancing ensemble")
         for i in range(N):
             self.model.run(self.ensemble[i], self.ensemble[i])
-        if self.verbose:
+        if self.verbose > 0:
             PETSc.Sys.Print("assimilation step complete")
         # trigger garbage cleanup
         PETSc.garbage_cleanup(PETSc.COMM_SELF)
+        compute_diagnostics(diagnostics,
+                            self.ensemble,
+                            descriptor=None,
+                            stage=Stage.AFTER_ASSIMILATION_STEP)
+        archive_diagnostics(diagnostics)
