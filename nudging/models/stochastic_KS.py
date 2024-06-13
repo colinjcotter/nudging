@@ -138,7 +138,7 @@ class KS(base_model):
         return Y
 
     def allocate(self):
-        particle = [Function(self.V)]
+        particle = [Function(self.V, name="u_out")]
         for i in range(self.nsteps):
             dW = Function(self.V_)
             particle.append(dW)

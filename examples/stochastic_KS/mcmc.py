@@ -17,8 +17,9 @@ with CheckpointFile("initial_sol_mixing.h5", 'r') as afile:
     mesh = afile.load_mesh()
 model.setup(mesh)
 
-X_truth = model.allocate()
-#u0 = X_truth[0]
+sample_prior = model.allocate()
+sample_posterior = model.allocate()
+proposal = model.allocate()
 
 def log_likelihood(y, Y):
     ll = (y-Y)**2/0.05**2/2*dx
@@ -31,27 +32,44 @@ def sample_initial_dist(i):
     return u0_read
 
 rho = 0.9998
-N_steps = 50
+#N_steps = 1000
+N_steps = 15 #to be increased later on
 
-V = FunctionSpace(model.mesh, 'CG', 1)
-proposal = Function(V)
-
-X_truth[0] = sample_initial_dist(1)
-
-for m in range(1, N_steps):
-    model.randomize(X_truth)
-    model.run(X_truth, X_truth)
-    y_true = model.obs().dat.data[:]
-
-    prop = rho * X_truth[0] + (1-rho**2)**(0.5) * sample_initial_dist(m+1)
-    proposal.assign(prop)
+f_list = []
+for m in range(N_steps):
+    #new sample
+    sample_prior[0].assign(sample_initial_dist(m))
+    model.randomize(sample_prior)
+    #construct the proposal
+    for i, component in enumerate(sample_posterior):
+        if m == 0:
+            proposal[i].assign(sample_prior[i])
+        else:
+            proposal[i].assign(rho * component + (1-rho**2)**(0.5) * sample_prior[i])
+    #compute the log likelihood
+    model.run(proposal, sample_posterior) #use sample_posterior as working memory
+    simulated_obs = model.obs()
+    new_likelihood = assemble(log_likelihood(sample_posterior[0], simulated_obs)) #first argument
+    
     #acceptance step
-    prob = min(1, math.exp(log_likelihood(y_true, proposal)) / math.exp(log_likelihood(y_true, X_truth[0])))
-    if random.random() > prob:
-        X_truth[0] = proposal
+    if m > 0:
+        prob = min(1, math.exp(new_likelihood - old_likelihood))
+        if random.random() < prob:
+            for i, component in enumerate(sample_posterior):
+                component.assign(proposal[i])
+    old_likelihood = new_likelihood
 
-#burnout = 100
+    model.run(sample_posterior, proposal) #use proposal as working memory
+    simulated_obs = model.obs()
+    f_list.append(simulated_obs.dat.data[:])
+
+stat = 0
+for el in range len(f_list):
+    stat += assemble(el[0]*dx)
+print(stat)
+ 
+#burn_in = 100
 #store the solutions in a checkpoint file
 with CheckpointFile("mcmc_functions.h5", 'w') as afile:
     afile.save_mesh(model.mesh)
-    afile.save_function(X_truth[0]) #compare this with the initial output of the particle filter
+    #afile.save_function(f_list) #compare with the particle filter
