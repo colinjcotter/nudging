@@ -19,6 +19,7 @@ class ensemble_petsc_interface:
         # PETSc vec
 
         X = Enlist(X)
+        self.X = X
         self.ensemble = ensemble
 
         # WE ARE GOING TO CHEAT AND USE A MIXED FUNCTION SPACE TO
@@ -39,8 +40,63 @@ class ensemble_petsc_interface:
         with w.dat.vec_ro as wvec:
             local_size = wvec.local_size
             global_size = wvec.size
-        sizes = (local_size, global_size)
+        self.sizes = (local_size, global_size)
+
         with w.dat.vec as wvec:
             self.Vec = PETSc.Vec().createWithArray(wvec.array,
                                                    size=sizes,
                                                    comm=ensemble.global_comm)
+
+        # some useful working memory
+        self.w = w
+
+    def vec2list(self, vec):
+        """
+        Transfer contents of vec to list of same types as X and return it.
+
+        vec - a PETSc vec
+
+        returns
+        X - a list of Firedrake.Function of same types as self.X
+        """
+
+        with self.w.dat.vec_wo as wvec:
+            # PETSc Vec copies into input to copy method
+            vec.copy(wvec)
+        X_out = []
+        index = 0.
+        ws = self.w.subfunctions
+        idx = 0
+        for X in self.X:
+            Xo = X.tape_value().copy()
+            for fn in enumerate(Xo.subfunctions):
+                fn.assign(ws[idx])
+                idx += 1
+            X_out.append(Xo)
+        return X_out
+
+    def list2vec(self, X):
+        """
+        Transfer contents of list of same types as X to PETSc vec
+        and return it.
+
+        X - a list of Firedrake.Function with same types as self.X
+
+        returns 
+        vec - a PETSc vec
+        """
+
+        with self.w.dat.vec_wo as wvec:
+            # PETSc Vec copies into input to copy method
+            vec.copy(wvec)
+        X_out = []
+        index = 0.
+        ws = self.w.subfunctions
+        idx = 0
+        for X in self.X:
+            Xo = X.tape_value().copy()
+            for fn in enumerate(Xo.subfunctions):
+                fn.assign(ws[idx])
+                idx += 1
+            X_out.append(Xo)
+        return X_out
