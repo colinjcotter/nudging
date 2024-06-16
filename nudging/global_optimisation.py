@@ -2,6 +2,8 @@ import firedrake as fd
 from operator import mul
 import petsc4py.PETSc as PETSc
 from pyadjoint.enlisting import Enlist
+from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
+
 
 class ensemble_petsc_interface:
     def init__(self, X, ensemble):
@@ -11,7 +13,7 @@ class ensemble_petsc_interface:
         (one for each ensemble rank)
 
         inputs:
-        X - a list of overloaded types
+        X - a list of Controls (must be Functions currently)
         ensemble - Firedrake.Ensemble ensemble communication object
         """
 
@@ -34,6 +36,7 @@ class ensemble_petsc_interface:
             function_spaces.append(fn.ufl_function_space())
         # This will flatten mixed spaces into one mixed space
         mixed_function_space = mul(function_spaces)
+        self.mixed_function_space = mixed_function_space
         w = fd.Function(mixed_function_space)
 
         # sniff the sizes to create the global PETSc Vec
@@ -53,7 +56,7 @@ class ensemble_petsc_interface:
     def vec2list(self, vec):
         """
         Transfer contents of vec to list of same types as X and return it.
-
+        (makes a new vec)
         vec - a PETSc vec
 
         returns
@@ -79,6 +82,7 @@ class ensemble_petsc_interface:
         """
         Transfer contents of list of same types as X to PETSc vec
         and return it.
+        (Makes a new list of new functions)
 
         X - a list of Firedrake.Function with same types as self.X
 
@@ -100,3 +104,56 @@ class ensemble_petsc_interface:
                 idx += 1
             X_out.append(Xo)
         return X_out
+
+
+class ensemble_tao_solver:
+    def __init__(self, Jhat, ensemble,
+                 solver_parameters, options_prefix=""):
+        """
+        Jhat - firedrake.EnsembleReducedFunctional
+        ensemble - Firedrake.Ensemble ensemble communication object
+        solver_parameters - a dictionary of solver parameters
+        """
+
+        X = Jhat.controls
+        interface = ensemble_petsc_interface(X, ensemble)
+        tao = PETSc.TAO().create(comm=ensemble.global_comm)
+
+        def objective_gradient(tao, x, g):
+            X = interface.vec2list()
+            J_val = Jhat(X)
+            dJ = Jhat.derivative()
+            return interface.list2vec(dJ)
+
+        tao.setObjectiveGradient(objective_gradient, None)
+
+        # using L2 norm/inner product
+        W = interface.mixed_function_space
+        u = fd.TrialFunction(W)
+        v = fd.TestFunction(W)
+        M = fd.assemble(fd.inner(u, v)*fd.dx).petscmat()
+        tao.setGradientNorm(M)
+
+        flat_solver_parameters = flatten_parameters(solver_parameters)
+        options = OptionsManager(flat_solver_parameters,
+                                      options_prefix)
+        tao.setOptionsPrefix(options.options_prefix)
+        tao.setFromOptions()
+
+        x = interface.list2vec(interface.X)
+        tao.setSolution(x)
+        tao.setUp()
+        self.x = x
+        self.tao = tao
+        self.interface = interface
+
+    def solve(self):
+        """
+        optimisation solve
+
+        Returns:
+            List of OverloadedType
+        """
+        self.tao.solve()
+        X = self.interface.vec2list(self.x)
+        return X
