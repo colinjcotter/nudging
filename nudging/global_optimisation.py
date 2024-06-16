@@ -1,12 +1,13 @@
 import firedrake as fd
 from operator import mul
 import petsc4py.PETSc as PETSc
+from functools import reduce
 from pyadjoint.enlisting import Enlist
 from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
 
 
 class ensemble_petsc_interface:
-    def init__(self, X, ensemble):
+    def __init__(self, X, ensemble):
         """
         Build a PETSc vec over the global communicator
         using an example set of list of overloaded types
@@ -35,7 +36,7 @@ class ensemble_petsc_interface:
                 raise NotImplementedError("Controls must be Firedrake Functions")
             function_spaces.append(fn.ufl_function_space())
         # This will flatten mixed spaces into one mixed space
-        mixed_function_space = mul(function_spaces)
+        mixed_function_space = reduce(mul, function_spaces)
         self.mixed_function_space = mixed_function_space
         w = fd.Function(mixed_function_space)
 
@@ -43,7 +44,7 @@ class ensemble_petsc_interface:
         with w.dat.vec_ro as wvec:
             local_size = wvec.local_size
             global_size = wvec.size
-        self.sizes = (local_size, global_size)
+        sizes = (local_size, global_size)
 
         with w.dat.vec as wvec:
             self.Vec = PETSc.Vec().createWithArray(wvec.array,
@@ -90,20 +91,17 @@ class ensemble_petsc_interface:
         vec - a PETSc vec
         """
 
-        with self.w.dat.vec_wo as wvec:
-            # PETSc Vec copies into input to copy method
-            vec.copy(wvec)
-        X_out = []
-        index = 0.
-        ws = self.w.subfunctions
+        # copy list into self.w
         idx = 0
-        for X in self.X:
-            Xo = X.tape_value().copy()
-            for fn in enumerate(Xo.subfunctions):
-                fn.assign(ws[idx])
+        for x in X:
+            for fn in enumerate(x.subfunctions):
+                self.w.sub(idx).assign(fn)
                 idx += 1
-            X_out.append(Xo)
-        return X_out
+
+        # get copy of self.w vec and return
+        with self.w.dat.vec_ro as wvec:
+            vec = PETSc.Vec(vec)
+        return vec
 
 
 class ensemble_tao_solver:
@@ -131,7 +129,7 @@ class ensemble_tao_solver:
         W = interface.mixed_function_space
         u = fd.TrialFunction(W)
         v = fd.TestFunction(W)
-        M = fd.assemble(fd.inner(u, v)*fd.dx).petscmat()
+        M = fd.assemble(fd.inner(u, v)*fd.dx).petscmat
         tao.setGradientNorm(M)
 
         flat_solver_parameters = flatten_parameters(solver_parameters)
