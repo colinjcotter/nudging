@@ -72,7 +72,7 @@ class ensemble_petsc_interface:
         ws = self.w.subfunctions
         idx = 0
         for X in self.X:
-            Xo = X.tape_value().copy()
+            Xo = X.tape_value().copy(deepcopy=True)
             for fn in Xo.subfunctions:
                 fn.assign(ws[idx])
                 idx += 1
@@ -120,7 +120,7 @@ class ensemble_tao_solver:
         tao = PETSc.TAO().create(comm=ensemble.global_comm)
 
         def objective_gradient(tao, x, g):
-            X = interface.vec2list()
+            X = interface.vec2list(x)
             J_val = Jhat(X)
             dJ = Jhat.derivative()
             interface.list2vec(dJ).copy(g)
@@ -143,7 +143,6 @@ class ensemble_tao_solver:
 
         x = interface.list2vec(interface.X)
         tao.setSolution(x)
-        PETSc.Sys.Print(x.norm())
         tao.setUp()
         self.x = x
         self.tao = tao
