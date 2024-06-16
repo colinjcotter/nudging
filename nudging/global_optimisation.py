@@ -73,7 +73,7 @@ class ensemble_petsc_interface:
         idx = 0
         for X in self.X:
             Xo = X.tape_value().copy()
-            for fn in enumerate(Xo.subfunctions):
+            for fn in Xo.subfunctions:
                 fn.assign(ws[idx])
                 idx += 1
             X_out.append(Xo)
@@ -94,13 +94,13 @@ class ensemble_petsc_interface:
         # copy list into self.w
         idx = 0
         for x in X:
-            for fn in enumerate(x.subfunctions):
+            for fn in x.subfunctions:
                 self.w.sub(idx).assign(fn)
                 idx += 1
 
         # get copy of self.w vec and return
         with self.w.dat.vec_ro as wvec:
-            vec = PETSc.Vec(vec)
+            vec = PETSc.Vec(wvec)
         return vec
 
 
