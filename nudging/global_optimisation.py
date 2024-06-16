@@ -1,6 +1,5 @@
 import firedrake as fd
 from operator import mul
-import petsc4py.PETSc as PETSc
 from functools import reduce
 from pyadjoint.enlisting import Enlist
 from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
@@ -33,7 +32,8 @@ class ensemble_petsc_interface:
         for x in X:
             fn = x.tape_value()
             if not isinstance(fn, fd.Function):
-                raise NotImplementedError("Controls must be Firedrake Functions")
+                raise NotImplementedError(
+                    "Controls must be Firedrake Functions")
             function_spaces.append(fn.ufl_function_space())
         # This will flatten mixed spaces into one mixed space
         mixed_function_space = reduce(mul, function_spaces)
@@ -45,6 +45,7 @@ class ensemble_petsc_interface:
             local_size = wvec.local_size
             global_size = wvec.size
         sizes = (local_size, global_size)
+        self.sizes = sizes
 
         with w.dat.vec as wvec:
             self.Vec = PETSc.Vec().createWithArray(wvec.array,
@@ -68,7 +69,6 @@ class ensemble_petsc_interface:
             # PETSc Vec copies into input to copy method
             vec.copy(wvec)
         X_out = []
-        index = 0.
         ws = self.w.subfunctions
         idx = 0
         for X in self.X:
@@ -87,7 +87,7 @@ class ensemble_petsc_interface:
 
         X - a list of Firedrake.Function with same types as self.X
 
-        returns 
+        returns
         vec - a PETSc vec
         """
 
@@ -100,7 +100,9 @@ class ensemble_petsc_interface:
 
         # get copy of self.w vec and return
         with self.w.dat.vec_ro as wvec:
-            vec = PETSc.Vec(wvec)
+            vec = PETSc.Vec().createWithArray(wvec.array,
+                                              size=self.sizes,
+                                              comm=self.ensemble.global_comm)
         return vec
 
 
@@ -121,7 +123,8 @@ class ensemble_tao_solver:
             X = interface.vec2list()
             J_val = Jhat(X)
             dJ = Jhat.derivative()
-            return interface.list2vec(dJ)
+            interface.list2vec(dJ).copy(g)
+            return J_val
 
         tao.setObjectiveGradient(objective_gradient, None)
 
@@ -134,12 +137,13 @@ class ensemble_tao_solver:
 
         flat_solver_parameters = flatten_parameters(solver_parameters)
         options = OptionsManager(flat_solver_parameters,
-                                      options_prefix)
+                                 options_prefix)
         tao.setOptionsPrefix(options.options_prefix)
         tao.setFromOptions()
 
         x = interface.list2vec(interface.X)
         tao.setSolution(x)
+        PETSc.Sys.Print(x.norm())
         tao.setUp()
         self.x = x
         self.tao = tao
