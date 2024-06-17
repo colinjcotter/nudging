@@ -46,12 +46,6 @@ class ensemble_petsc_interface:
             global_size = wvec.size
         sizes = (local_size, global_size)
         self.sizes = sizes
-
-        with w.dat.vec as wvec:
-            self.Vec = PETSc.Vec().createWithArray(wvec.array,
-                                                   size=sizes,
-                                                   comm=ensemble.global_comm)
-
         # some useful working memory
         self.w = w
 
@@ -99,10 +93,11 @@ class ensemble_petsc_interface:
                 idx += 1
 
         # get copy of self.w vec and return
+        vec = PETSc.Vec().createMPI(size=self.sizes,
+                                    comm=self.ensemble.global_comm)
+
         with self.w.dat.vec_ro as wvec:
-            vec = PETSc.Vec().createWithArray(wvec.array,
-                                              size=self.sizes,
-                                              comm=self.ensemble.global_comm)
+            wvec.copy(vec)
         return vec
 
 
@@ -128,18 +123,33 @@ class ensemble_tao_solver:
 
         tao.setObjectiveGradient(objective_gradient, None)
 
-        # using L2 norm/inner product
-        W = interface.mixed_function_space
-        u = fd.TrialFunction(W)
-        v = fd.TestFunction(W)
-        M = fd.assemble(fd.inner(u, v)*fd.dx).petscmat
+        class inner_mat:
+            def __init__(self, interface):
+                self.interface = interface
+                # using L2 norm/inner product
+                W = interface.mixed_function_space
+                self.v = fd.TestFunction(W)
+
+            def mult(self, mat, X, Y):
+                # abusing vec2list side effect of copying to interface.w
+                self.interface.vec2list(X)
+                ycofunc = fd.assemble(fd.inner(self.v,
+                                               self.interface.w)*fd.dx)
+                with ycofunc.dat.vec_ro as yvec:
+                    yvec.copy(Y)
+
+        sizes = interface.sizes
+        M = PETSc.Mat().createPython([sizes, sizes],
+                                     comm=ensemble.global_comm)
+        M.setPythonContext(inner_mat(interface))
+        M.setUp()
         tao.setGradientNorm(M)
 
         flat_solver_parameters = flatten_parameters(solver_parameters)
         options = OptionsManager(flat_solver_parameters,
                                  options_prefix)
         tao.setOptionsPrefix(options.options_prefix)
-        tao.setFromOptions()
+        options.set_from_options(tao)
 
         x = interface.list2vec(interface.X)
         tao.setSolution(x)
