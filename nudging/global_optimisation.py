@@ -93,11 +93,15 @@ class ensemble_petsc_interface:
                 idx += 1
 
         # get copy of self.w vec and return
-        vec = PETSc.Vec().createMPI(size=self.sizes,
-                                    comm=self.ensemble.global_comm)
-
-        with self.w.dat.vec_ro as wvec:
-            wvec.copy(vec)
+        # we have to do it this way so we can copy from
+        # local to global correctly.
+        w1 = self.w.copy(deepcopy=True)
+        gcomm = self.ensemble.global_comm
+        with w1.dat.vec as fvec:
+            vec = PETSc.Vec().createWithArray(fvec.array,
+                                              size=self.sizes,
+                                              comm=gcomm)
+            vec.setFromOptions()
         return vec
 
 
@@ -113,6 +117,7 @@ class ensemble_tao_solver:
         X = Jhat.controls
         interface = ensemble_petsc_interface(X, ensemble)
         tao = PETSc.TAO().create(comm=ensemble.global_comm)
+        rank = ensemble.global_comm.rank
 
         def objective_gradient(tao, x, g):
             X = interface.vec2list(x)
@@ -135,8 +140,13 @@ class ensemble_tao_solver:
                 self.interface.vec2list(X)
                 ycofunc = fd.assemble(fd.inner(self.v,
                                                self.interface.w)*fd.dx)
-                with ycofunc.dat.vec_ro as yvec:
-                    yvec.copy(Y)
+                gcomm = ensemble.global_comm
+                with ycofunc.dat.vec as fvec:
+                    vec = PETSc.Vec().createWithArray(fvec.array,
+                                                      size=interface.sizes,
+                                                      comm=gcomm)
+                    vec.setFromOptions()
+                vec.copy(Y)
 
         sizes = interface.sizes
         M = PETSc.Mat().createPython([sizes, sizes],
@@ -165,6 +175,6 @@ class ensemble_tao_solver:
         Returns:
             List of OverloadedType
         """
-        self.tao.solve()
+        x = self.tao.solve()
         X = self.interface.vec2list(self.x)
         return X
