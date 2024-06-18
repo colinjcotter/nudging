@@ -101,7 +101,7 @@ class ensemble_petsc_interface:
             vec = PETSc.Vec().createWithArray(fvec.array,
                                               size=self.sizes,
                                               comm=gcomm)
-            vec.setFromOptions()
+        vec.setFromOptions()
         return vec
 
 
@@ -117,7 +117,6 @@ class ensemble_tao_solver:
         X = Jhat.controls
         interface = ensemble_petsc_interface(X, ensemble)
         tao = PETSc.TAO().create(comm=ensemble.global_comm)
-        rank = ensemble.global_comm.rank
 
         def objective_gradient(tao, x, g):
             X = interface.vec2list(x)
@@ -145,7 +144,7 @@ class ensemble_tao_solver:
                     vec = PETSc.Vec().createWithArray(fvec.array,
                                                       size=interface.sizes,
                                                       comm=gcomm)
-                    vec.setFromOptions()
+                vec.setFromOptions()
                 vec.copy(Y)
 
         sizes = interface.sizes
