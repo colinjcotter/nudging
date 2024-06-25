@@ -273,6 +273,8 @@ class jittertemp_filter(base_filter):
             tao_params = {
                 "tao_type": "lmvm",
                 "tao_cg_type": "pr",
+                "tao_monitor": None,
+                "tao_converged_reason": None
             }
 
         N = self.nensemble[self.ensemble_rank]
