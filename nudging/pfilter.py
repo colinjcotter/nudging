@@ -11,9 +11,11 @@ from firedrake.adjoint import pause_annotation, continue_annotation, \
     get_working_tape
 from .global_optimisation import ensemble_tao_solver
 
+
 def logsumexp(x):
     c = x.max()
     return c + np.log(np.sum(np.exp(x - c)))
+
 
 def logsumexp_adjfloat(x):
     c = x[0]
@@ -21,6 +23,7 @@ def logsumexp_adjfloat(x):
         c = fadj.max(c, x[i])
     sumexp = fadj.exp(x[0] - c)
     c += fadj.log(sumexp)
+
 
 class base_filter(object, metaclass=ABCMeta):
     ensemble = []
@@ -303,9 +306,8 @@ class jittertemp_filter(base_filter):
                 MALA_J = fd.assemble(log_likelihood(y, Y))
                 # functional for MALA
                 cpts = [j for j in range(1, nsteps+1)]
-                self.Jhat_dW = fadj.ReducedFunctional(MALA_J, m,
-                                                      derivative_components
-                                                      =cpts)
+                self.Jhat_dW = fadj.ReducedFunctional(
+                    MALA_J, m, derivative_components=cpts)
                 if self.nudging:
                     if self.verbose > 0:
                         PETSc.Sys.Print("taping forward model for nudging")
@@ -354,12 +356,11 @@ class jittertemp_filter(base_filter):
                             cpts.append(offset + step)
                             offset += len(self.ensemble[i])
                             # we only update lambdas[step] on timestep step
-                        rf = fadj.EnsembleReducedFunctional(Js, Controls,
-                                                            self.ensemble,
-                                                            scatter_control=False,
-                                                            gather_functional=Jg)
-                        solver = ensemble_tao_solver(rf, self.ensemble,
-                                                     solver_parameters=tao_params)
+                        rf = fadj.EnsembleReducedFunctional(
+                            Js, Controls, self.ensemble, scatter_control=False,
+                            gather_functional=BigJhat)
+                        solver = ensemble_tao_solver(
+                            rf, self.ensemble, solver_parameters=tao_params)
                         self.Jhat_solvers.append(solver)
 
             if self.visualise_tape:
@@ -390,7 +391,8 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][nsteps+1+step].assign(
                         Xopt[offset+nsteps+1+step])
                     # get the randomised noise for this step
-                    self.model.randomize(self.new_ensemble[i])  # not efficient!
+                    self.model.randomize(
+                        self.new_ensemble[i])  # not efficient!
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(
                         self.new_ensemble[i][1+step])
