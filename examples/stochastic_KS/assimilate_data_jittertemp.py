@@ -15,44 +15,26 @@ from nudging.models.stochastic_KS import KS
 nsteps = 5
 xpoints = 40
 model = KS(300, nsteps, xpoints)
-
 nensemble = [5]*6
-
 MALA = False
 verbose = True
-jtfilter = jittertemp_filter(nensemble, n_jitt=4, verbose=verbose, MALA=MALA)
 
+jtfilter = jittertemp_filter(nensemble, n_jitt=4, verbose=verbose, MALA=MALA)
 #Load initial condition from a checkpoint file after some time idx
 with CheckpointFile("initial_sol_mixing.h5", 'r', comm=jtfilter.subcommunicators.comm) as afile:
     mesh = afile.load_mesh()
-
 model.setup(mesh)
-
 jtfilter.setup(model)
 
 x, = SpatialCoordinate(model.mesh)
-
 #for smoother output
 Q = FunctionSpace(model.mesh, 'CG', 1)
 u_out = Function(Q)
 
-
-
 #prepare the initial ensemble
 for i in range(nensemble[jtfilter.ensemble_rank]):
-    #dx0 = model.rg.normal(model.R, 0., 0.05)
-    #dx1 = model.rg.normal(model.R, 0., 0.05)
-    #a = model.rg.uniform(model.R, 0., 1.0)
-    #b = model.rg.uniform(model.R, 0., 1.0)
-    #u0_exp = (1+a)*0.2*2/(exp(x-403./15. + dx0) + exp(-x+403./15. + dx0)) \
-    #    + (1+b)*0.5*2/(exp(x-203./15. + dx1)+exp(-x+203./15. + dx1))
-
-    #u = jtfilter.ensemble[i][0]
-    #u.project(u0_exp)
-
     with CheckpointFile("initial_sol_mixing.h5", 'r') as afile:
         u0_read = afile.load_function(model.mesh, name="u_out", idx=i*2000)
-
     u = jtfilter.ensemble[i][0]
     u.project(u0_read)
 
@@ -64,7 +46,6 @@ def log_likelihood(y, Y):
 y_exact = np.load('y_true.npy')
 y = np.load('y_obs.npy')
 N_obs = y.shape[0]
-
 yVOM = Function(model.VVOM)
 
 # prepare shared arrays for data
@@ -107,9 +88,8 @@ for k in range(N_obs):
     jtfilter.assimilation_step(yVOM, log_likelihood)
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
-        #to check the spread of the noise
-        #model.randomize(jtfilter.ensemble[i])
-        #model.run(jtfilter.ensemble[i], jtfilter.ensemble[i])
+        model.randomize(jtfilter.ensemble[i])
+        model.run(jtfilter.ensemble[i], jtfilter.ensemble[i])
 
         u_out.interpolate(jtfilter.ensemble[i][0])
         outfile[i].write(u_out, time=k)
@@ -120,7 +100,6 @@ for k in range(N_obs):
         u = jtfilter.ensemble[i][0]
         with CheckpointFile("output_cp.h5", 'w', comm=jtfilter.subcommunicators.comm) as afile:
             afile.save_function(u, idx=k+1, name=str(ensemble_idx))
-
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
         model.w0.assign(jtfilter.ensemble[i][0])

@@ -26,14 +26,15 @@ def log_likelihood(y, Y):
     return ll
 
 def sample_initial_dist(i):
-    #i = random.randint(1, 100)
     with CheckpointFile("initial_sol_mixing.h5", 'r') as afile:
-        u0_read = afile.load_function(model.mesh, name="u_out", idx=i*2000)
+        u0_read = afile.load_function(model.mesh, name="u_out", idx=i*1000)
     return u0_read
 
 rho = 0.9998
-#N_steps = 1000
-N_steps = 15 #to be increased later on
+N_steps = 1000
+y = np.load('y_obs.npy')
+yVOM = Function(model.VVOM)
+yVOM.dat.data[:] = y[0, :] #index set at 0
 
 f_list = []
 for m in range(N_steps):
@@ -49,7 +50,7 @@ for m in range(N_steps):
     #compute the log likelihood
     model.run(proposal, sample_posterior) #use sample_posterior as working memory
     simulated_obs = model.obs()
-    new_likelihood = assemble(log_likelihood(sample_posterior[0], simulated_obs)) #first argument
+    new_likelihood = assemble(log_likelihood(yVOM, simulated_obs)) #first argument
     
     #acceptance step
     if m > 0:
@@ -64,12 +65,7 @@ for m in range(N_steps):
     f_list.append(simulated_obs.dat.data[:])
 
 stat = 0
-for el in range len(f_list):
-    stat += assemble(el[0]*dx)
+for el in f_list:
+    stat += el[0]
+stat /= len(f_list)
 print(stat)
- 
-#burn_in = 100
-#store the solutions in a checkpoint file
-with CheckpointFile("mcmc_functions.h5", 'w') as afile:
-    afile.save_mesh(model.mesh)
-    #afile.save_function(f_list) #compare with the particle filter

@@ -19,12 +19,12 @@ u0 = X_truth[0]
 x, = SpatialCoordinate(model.mesh)
 #Initial conditions
 u0.project(0.2*2/(exp(x-403./15.) + exp(-x+403./15.)) + 0.5*2/(exp(x-203./15.)+exp(-x+203./15.)))
-N_obs = 20000
+N_obs = 1000000
 
 with CheckpointFile("initial_sol_mixing.h5", 'w') as afile:
     afile.save_mesh(model.mesh)
 
-for i in tqdm(range(N_obs)):
+for i in tqdm(range(N_obs+1)):
     model.randomize(X_truth)
     model.run(X_truth, X_truth) # run method for every time step
 
