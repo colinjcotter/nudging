@@ -334,7 +334,7 @@ class jittertemp_filter(base_filter):
                         #  adding Lambda to the controls for this step
                         self.Control_inputs[step].append(
                             self.ensemble[i][nsteps+1+step])
-                        Controls.append(fadj.Control(
+                        Controls[step].append(fadj.Control(
                             self.ensemble[i][nsteps+1+step]))
                         #  adding model state to the parameters
                         self.Parameter_inputs[step].append(
@@ -353,7 +353,7 @@ class jittertemp_filter(base_filter):
                                 continue
                             self.Parameter_inputs[step].append(
                                 self.ensemble[i][nsteps+1+step2])
-                            Parameters.append(fadj.Control(
+                            Parameters[step].append(fadj.Control(
                                 self.ensemble[i][nsteps+1+step2]))
 
                         # tape model for local particle i
@@ -364,9 +364,9 @@ class jittertemp_filter(base_filter):
                         nudge_J += self.model.lambda_functional()
                         Js.append(nudge_J)
                         assert isinstance(nudge_J, OverloadedType)
-                #  adding in the data as a parameter
-                self.Parameter_inputs.append(self.y)
-                Parameters.append(self.y)
+                        #  adding in the data as a parameter
+                        self.Parameter_inputs[step].append(self.y)
+                        Parameters[step].append(self.y)
 
                 # build the RF that maps from the Js to the BigJ
                 BigJ = -(2 + self.sigma)*logsumexp_adjfloat(BigJ_floats,
@@ -390,7 +390,6 @@ class jittertemp_filter(base_filter):
                     # we only update lambdas[step] on timestep step
                     rf = ParameterisedEnsembleReducedFunctional(
                         Js, Controls[step], Parameters[step], self.ensemble,
-                        scatter_control=False,
                         gather_functional=BigJhat)
                     self.rfs.append(rf)
                     solver = ensemble_tao_solver(
