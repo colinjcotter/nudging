@@ -105,6 +105,32 @@ class ensemble_petsc_interface:
         return vec
 
 
+class ParameterisedEnsembleReducedFunctional:
+    def __init__(self, Js, Controls, Parameters, ensemble,
+                 gather_functional):
+        full_Controls = Controls + Parameters
+        self.Parameters = []
+        for i, parameter in enumerate(self.Parameters):
+            self.Parameters.append(parameter.tape_value())
+        derivative_components = [i for i in range(len(Controls))]
+        self.rf = fd.EnsembleReducedFunctional(
+            Js, full_Controls, ensemble, scatter_control=False,
+            gather_functional=gather_functional,
+            derivative_components=derivative_components)
+        self.derivative_components = derivative_components
+
+    def update_parameters(self, Parameters):
+        for i, parameter in Parameters:
+            self.Parameters[i].assign(parameter)
+
+    def __call__(self, inputs):
+        full_inputs = inputs + self.Parameters
+        return self.rf(full_inputs)
+
+    def derivative(self):
+        return self.rf.derivative()[self.derivative_components]
+
+
 class ensemble_tao_solver:
     def __init__(self, Jhat, ensemble,
                  solver_parameters, options_prefix=""):
