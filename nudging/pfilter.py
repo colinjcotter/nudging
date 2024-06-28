@@ -321,10 +321,10 @@ class jittertemp_filter(base_filter):
                     PETSc.Sys.Print("taping forward model for nudging")
                 self.y = y
                 Js = []  # list of lists of functionals
-                Controls = [[]]*N  # things to pass to RF constructor
-                self.Control_inputs = [[]]*N  # things to pass to RF.__call__
-                Parameters = [[]]*(N+1+N-1)  # things to pass to RF constructor
-                self.Parameter_inputs = [[]]*(N+1+N-1)  # pass to RF.update_...
+                Controls = [[]]*nsteps  # things to pass to RF constructor
+                self.Control_inputs = [[]]*nsteps # things to pass to RF.__call__
+                Parameters = [[]]*nsteps  # things to pass to RF constructor
+                self.Parameter_inputs = [[]]*nsteps  # pass to RF.update_...
                 assert self.model.lambdas  # can't nudge without lambdas
                 BigJ_floats = []  # inputs for functional that takes
                 #                   in all the Js
@@ -378,7 +378,7 @@ class jittertemp_filter(base_filter):
                 # they differ by the derivative components
                 self.Jhat_solvers = []  # list of Tao solvers
                 self.rfs = []
-                for step in range(nsteps+1, nsteps*2+1):
+                for step in range(nsteps):
                     # 0 component is state
                     # 1 .. step is noise
                     # step + 1 .. 2*step is lambdas
@@ -389,11 +389,12 @@ class jittertemp_filter(base_filter):
                         offset += len(self.ensemble[i])
                     # we only update lambdas[step] on timestep step
                     rf = ParameterisedEnsembleReducedFunctional(
-                        Js, Controls[step], Parameters[step], self.ensemble,
+                        Js, Controls[step], Parameters[step],
+                        self.subcommunicators,
                         gather_functional=BigJhat)
                     self.rfs.append(rf)
                     solver = ensemble_tao_solver(
-                        rf, self.ensemble, solver_parameters=tao_params)
+                        rf, self.subcommunicators, solver_parameters=tao_params)
                     self.Jhat_solvers.append(solver)
 
             if self.visualise_tape:

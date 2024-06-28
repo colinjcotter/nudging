@@ -3,6 +3,7 @@ from operator import mul
 from functools import reduce
 from pyadjoint.enlisting import Enlist
 from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
+import firedrake.adjoint as fadj
 
 
 class ensemble_petsc_interface:
@@ -108,12 +109,13 @@ class ensemble_petsc_interface:
 class ParameterisedEnsembleReducedFunctional:
     def __init__(self, Js, Controls, Parameters, ensemble,
                  gather_functional):
+        self.controls = Controls
         full_Controls = Controls + Parameters
         self.Parameters = []
         for i, parameter in enumerate(self.Parameters):
             self.Parameters.append(parameter.tape_value())
         derivative_components = [i for i in range(len(Controls))]
-        self.rf = fd.EnsembleReducedFunctional(
+        self.rf = fadj.EnsembleReducedFunctional(
             Js, full_Controls, ensemble, scatter_control=False,
             gather_functional=gather_functional,
             derivative_components=derivative_components)
