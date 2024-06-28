@@ -388,6 +388,7 @@ class jittertemp_filter(base_filter):
                         cpts.append(offset + step)
                         offset += len(self.ensemble[i])
                     # we only update lambdas[step] on timestep step
+                    assert len(Parameters) == len(self.Parameter_inputs)
                     rf = ParameterisedEnsembleReducedFunctional(
                         Js, Controls[step], Parameters[step],
                         self.subcommunicators,
@@ -415,6 +416,7 @@ class jittertemp_filter(base_filter):
             # nudging one step at a time
             for step in range(nsteps):
                 # update with current noise and lambda values
+                print(step, len(self.Parameter_inputs[step]))
                 self.rfs[step].update_parameters(self.Parameter_inputs[step])
                 self.rfs[step](self.Control_inputs[step])
                 # get the minimum over current lambda

@@ -122,7 +122,8 @@ class ParameterisedEnsembleReducedFunctional:
         self.derivative_components = derivative_components
 
     def update_parameters(self, Parameters):
-        for i, parameter in Parameters:
+        for i, parameter in enumerate(Parameters):
+            print(i)
             self.Parameters[i].assign(parameter)
 
     def __call__(self, inputs):
