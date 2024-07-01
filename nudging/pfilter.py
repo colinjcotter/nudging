@@ -329,7 +329,6 @@ class jittertemp_filter(base_filter):
                 BigJ_floats = []  # inputs for functional that takes
                 #                   in all the Js
                 for i in range(N):  # build functionals for each particle
-                    BigJ_floats.append(fadj.AdjFloat(1.0))  # needs > 0
                     for step in range(nsteps):
                         #  adding Lambda to the controls for this step
                         self.Control_inputs[step].append(
@@ -347,6 +346,7 @@ class jittertemp_filter(base_filter):
                                 self.ensemble[i][1+step])
                             Parameters[step].append(
                                 fadj.Control(self.ensemble[i][1+step]))
+
                         #  adding Lambda for other steps as parameters
                         for step2 in range(nsteps):
                             if step2 == step:
@@ -356,24 +356,28 @@ class jittertemp_filter(base_filter):
                             Parameters[step].append(fadj.Control(
                                 self.ensemble[i][nsteps+1+step2]))
 
-                        # tape model for local particle i
-                        self.model.run(self.ensemble[i],
-                                       self.new_ensemble[i])
-                        Y = self.model.obs()
-                        nudge_J = fd.assemble(log_likelihood(y, Y))
-                        nudge_J += self.model.lambda_functional()
-                        Js.append(nudge_J)
-                        assert isinstance(nudge_J, OverloadedType)
-                        #  adding in the data as a parameter
-                        self.Parameter_inputs[step].append(self.y)
-                        Parameters[step].append(self.y)
+                    # tape model for local particle i
+                    self.model.run(self.ensemble[i],
+                                   self.new_ensemble[i])
+                    Y = self.model.obs()
+                    nudge_J = fd.assemble(log_likelihood(y, Y))
+                    nudge_J += self.model.lambda_functional()
+                    Js.append(nudge_J)
+                    assert isinstance(nudge_J, OverloadedType)
+                    #  adding in the data as a parameter
+                    self.Parameter_inputs[step].append(self.y)
+                    Parameters[step].append(fadj.Control(self.y))
 
+                for i in range(np.sum(self.nensemble)):
+                    BigJ_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
                 # build the RF that maps from the Js to the BigJ
                 BigJ = -(2 + self.sigma)*logsumexp_adjfloat(BigJ_floats,
                                                             factor=-1.0)
                 BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
                 BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
                 BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
+                assert len(BigJ_Controls) == len(Js)
+                print("len bigj js", len(Js))
                 # reduced functionals for each step
                 # they differ by the derivative components
                 self.Jhat_solvers = []  # list of Tao solvers
@@ -396,7 +400,8 @@ class jittertemp_filter(base_filter):
                         gather_functional=BigJhat)
                     self.rfs.append(rf)
                     solver = ensemble_tao_solver(
-                        rf, self.subcommunicators, solver_parameters=tao_params)
+                        rf, self.subcommunicators,
+                        solver_parameters=tao_params)
                     self.Jhat_solvers.append(solver)
 
             if self.visualise_tape:
