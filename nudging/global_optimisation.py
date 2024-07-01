@@ -130,7 +130,8 @@ class ParameterisedEnsembleReducedFunctional:
         return self.rf(full_inputs)
 
     def derivative(self):
-        return self.rf.derivative()[self.derivative_components]
+        der = self.rf.derivative()
+        return [der[i] for i in self.derivative_components]
 
 
 class ensemble_tao_solver:

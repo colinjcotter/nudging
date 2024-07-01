@@ -376,8 +376,6 @@ class jittertemp_filter(base_filter):
                 BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
                 BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
                 BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
-                assert len(BigJ_Controls) == len(Js)
-                print("len bigj js", len(Js))
                 # reduced functionals for each step
                 # they differ by the derivative components
                 self.Jhat_solvers = []  # list of Tao solvers
