@@ -112,7 +112,7 @@ class ParameterisedEnsembleReducedFunctional:
         self.controls = Controls
         full_Controls = Controls + Parameters
         self.Parameters = []
-        for i, parameter in enumerate(self.Parameters):
+        for i, parameter in enumerate(Parameters):
             self.Parameters.append(parameter.tape_value())
         derivative_components = [i for i in range(len(Controls))]
         self.rf = fadj.EnsembleReducedFunctional(
@@ -123,7 +123,6 @@ class ParameterisedEnsembleReducedFunctional:
 
     def update_parameters(self, Parameters):
         for i, parameter in enumerate(Parameters):
-            print(i)
             self.Parameters[i].assign(parameter)
 
     def __call__(self, inputs):
