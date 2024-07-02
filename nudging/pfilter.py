@@ -1,6 +1,9 @@
 from abc import ABCMeta, abstractmethod
 import firedrake as fd
 import firedrake.adjoint as fadj
+from pyadjoint import exp as pexp
+from pyadjoint import log as plog
+from pyadjoint import OverloadedType
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from .resampling import residual_resampling
@@ -9,11 +12,24 @@ import numpy as np
 from .parallel_arrays import DistributedDataLayout1D, SharedArray, OwnedArray
 from firedrake.adjoint import pause_annotation, continue_annotation, \
     get_working_tape
+from .global_optimisation import ensemble_tao_solver, \
+        ParameterisedEnsembleReducedFunctional
 
 
 def logsumexp(x):
     c = x.max()
     return c + np.log(np.sum(np.exp(x - c)))
+
+
+def logsumexp_adjfloat(x, factor=1.0):
+    c = factor*x[0]
+    for i in range(1, len(x)):
+        c = max(c, factor*x[i])
+    sumexp = pexp(factor*x[0] - c)
+    for i in range(1, len(x)):
+        sumexp += pexp(factor*x[0] - c)
+    c += plog(sumexp)
+    return c
 
 
 class base_filter(object, metaclass=ABCMeta):
@@ -213,7 +229,7 @@ class bootstrap_filter(base_filter):
 class jittertemp_filter(base_filter):
     def __init__(self, n_jitt, delta,
                  verbose=0, MALA=False, nudging=False,
-                 visualise_tape=False):
+                 visualise_tape=False, sigma=0.1):
         self.delta = delta
         self.verbose = verbose
         self.MALA = MALA
@@ -221,6 +237,7 @@ class jittertemp_filter(base_filter):
         self.nudging = nudging
         self.visualise_tape = visualise_tape
         self.n_jitt = n_jitt
+        self.sigma = sigma  # nudging parameter
 
         if MALA:
             PETSc.Sys.Print("Warning, we are not currently "
@@ -261,7 +278,15 @@ class jittertemp_filter(base_filter):
 
     def assimilation_step(self, y, log_likelihood,
                           diagnostics=[],
-                          ess_tol=0.8):
+                          ess_tol=0.8, tao_params=None):
+        if not tao_params:
+            tao_params = {
+                "tao_type": "lmvm",
+                "tao_cg_type": "pr",
+                "tao_monitor": None,
+                "tao_converged_reason": None
+            }
+
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
@@ -271,44 +296,112 @@ class jittertemp_filter(base_filter):
 
         # tape the forward model
         if not self.model_taped:
-            if self.verbose > 0:
-                PETSc.Sys.Print("taping forward model")
             self.model_taped = True
             continue_annotation()
-            self.model.run(self.ensemble[0],
-                           self.new_ensemble[0])
-            # set the controls
-            if isinstance(y, fd.Function):
-                m = self.model.controls() + [fadj.Control(y)]
-            else:
-                m = self.model.controls()
-            # requires log_likelihood to return symbolic
-            Y = self.model.obs()
-            MALA_J = fd.assemble(log_likelihood(y, Y))
+            if self.MALA:
+                if self.verbose > 0:
+                    PETSc.Sys.Print("taping forward model for MALA")
+                self.model.run(self.ensemble[0],
+                               self.new_ensemble[0])
+                # set the controls
+                if isinstance(y, fd.Function):
+                    m = self.model.controls() + [fadj.Control(y)]
+                else:
+                    m = self.model.controls()
+                # requires log_likelihood to return symbolic
+                Y = self.model.obs()
+                MALA_J = fd.assemble(log_likelihood(y, Y))
+                # functional for MALA
+                cpts = [j for j in range(1, nsteps+1)]
+                self.Jhat_dW = fadj.ReducedFunctional(
+                    MALA_J, m, derivative_components=cpts)
 
             if self.nudging:
-                nudge_J = fd.assemble(log_likelihood(y, Y))
-                nudge_J += self.model.lambda_functional()
-                # set up the functionals
-                # functional for nudging
-                self.Jhat = []
-                for step in range(nsteps+1, nsteps*2+1):
+                if self.verbose > 0:
+                    PETSc.Sys.Print("taping forward model for nudging")
+                self.y = y
+                Js = []  # list of lists of functionals
+                Controls = [[]]*nsteps  # things to pass to RF constructor
+                self.Control_inputs = [[]]*nsteps # things to pass to RF.__call__
+                Parameters = [[]]*nsteps  # things to pass to RF constructor
+                self.Parameter_inputs = [[]]*nsteps  # pass to RF.update_...
+                assert self.model.lambdas  # can't nudge without lambdas
+                BigJ_floats = []  # inputs for functional that takes
+                #                   in all the Js
+                for i in range(N):  # build functionals for each particle
+                    for step in range(nsteps):
+                        #  adding Lambda to the controls for this step
+                        self.Control_inputs[step].append(
+                            self.ensemble[i][nsteps+1+step])
+                        Controls[step].append(fadj.Control(
+                            self.ensemble[i][nsteps+1+step]))
+                        #  adding model state to the parameters
+                        self.Parameter_inputs[step].append(
+                            self.ensemble[i][0])
+                        Parameters[step].append(
+                            fadj.Control(self.ensemble[i][0]))
+                        #  adding noise values to the parameters
+                        for step2 in range(nsteps):
+                            self.Parameter_inputs[step].append(
+                                self.ensemble[i][1+step])
+                            Parameters[step].append(
+                                fadj.Control(self.ensemble[i][1+step]))
+
+                        #  adding Lambda for other steps as parameters
+                        for step2 in range(nsteps):
+                            if step2 == step:
+                                continue
+                            self.Parameter_inputs[step].append(
+                                self.ensemble[i][nsteps+1+step2])
+                            Parameters[step].append(fadj.Control(
+                                self.ensemble[i][nsteps+1+step2]))
+
+                    # tape model for local particle i
+                    self.model.run(self.ensemble[i],
+                                   self.new_ensemble[i])
+                    Y = self.model.obs()
+                    nudge_J = fd.assemble(log_likelihood(y, Y))
+                    nudge_J += self.model.lambda_functional()
+                    Js.append(nudge_J)
+                    assert isinstance(nudge_J, OverloadedType)
+                    #  adding in the data as a parameter
+                    self.Parameter_inputs[step].append(self.y)
+                    Parameters[step].append(fadj.Control(self.y))
+
+                for i in range(np.sum(self.nensemble)):
+                    BigJ_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
+                # build the RF that maps from the Js to the BigJ
+                BigJ = -(2 + self.sigma)*logsumexp_adjfloat(BigJ_floats,
+                                                            factor=-1.0)
+                BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
+                BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
+                BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
+                # reduced functionals for each step
+                # they differ by the derivative components
+                self.Jhat_solvers = []  # list of Tao solvers
+                self.rfs = []
+                for step in range(nsteps):
                     # 0 component is state
                     # 1 .. step is noise
                     # step + 1 .. 2*step is lambdas
-                    assert self.model.lambdas
+                    offset = 0
+                    cpts = []
+                    for i in range(N):
+                        cpts.append(offset + step)
+                        offset += len(self.ensemble[i])
                     # we only update lambdas[step] on timestep step
-                    cpts = [step]
+                    assert len(Parameters[step]) == \
+                        len(self.Parameter_inputs[step])
+                    rf = ParameterisedEnsembleReducedFunctional(
+                        Js, Controls[step], Parameters[step],
+                        self.subcommunicators,
+                        gather_functional=BigJhat)
+                    self.rfs.append(rf)
+                    solver = ensemble_tao_solver(
+                        rf, self.subcommunicators,
+                        solver_parameters=tao_params)
+                    self.Jhat_solvers.append(solver)
 
-                    fnl = fadj.ReducedFunctional(nudge_J,
-                                                 m,
-                                                 derivative_components=cpts)
-
-                    self.Jhat.append(fnl)
-            # functional for MALA
-            cpts = [j for j in range(1, nsteps+1)]
-            self.Jhat_dW = fadj.ReducedFunctional(MALA_J, m,
-                                                  derivative_components=cpts)
             if self.visualise_tape:
                 tape = get_working_tape()
                 assert isinstance(self.visualise_tape, str)
@@ -316,6 +409,7 @@ class jittertemp_filter(base_filter):
             pause_annotation()
 
         if self.nudging:
+            self.y.assign(y)
             if self.verbose > 0:
                 PETSc.Sys.Print("Starting nudging")
             for i in range(N):
@@ -323,33 +417,27 @@ class jittertemp_filter(base_filter):
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
-                # nudging one step at a time
-                for step in range(nsteps):
-                    # update with current noise and lambda values
-                    self.Jhat[step](self.ensemble[i]+[y])
-                    # get the minimum over current lambda
-                    if self.verbose > 1:
-                        PETSc.Sys.Print("Solving for Lambda step ", step,
-                                        "local ensemble member ", i)
-                    if i == 0:
-                        Xopt = fadj.minimize(self.Jhat[step],
-                                             options={"disp": False})
-                    else:
-                        Xopt = fadj.minimize(self.Jhat[step])
-                    if self.verbose > 2:
-                        for j in range(2*nsteps+1):
-                            PETSc.Sys.Print(fd.norm(Xopt[j]))
-                            PETSc.Sys.Print(j, fd.norm(
-                                self.ensemble[i][j]-Xopt[j]),
-                                "nil checks")
-                        PETSc.Sys.Print(j, fd.norm(y-Xopt[j+1]), "Y checks")
-                    # place the optimal value of lambda into ensemble
-                    self.ensemble[i][nsteps+1+step].assign(
-                        Xopt[nsteps+1+step])
+            # nudging one step at a time
+            for step in range(nsteps):
+                # update with current noise and lambda values
+                self.rfs[step].update_parameters(self.Parameter_inputs[step])
+                self.rfs[step](self.Control_inputs[step])
+                # get the minimum over current lambda
+                if self.verbose > 1:
+                    PETSc.Sys.Print("Solving for Lambda step ", step)
+
+                Xopt = self.Jhat_solvers[step].solve()
+                assert isinstance(Xopt[0], fd.Function)
+                # place the optimal value of lambda into ensemble
+                offset = 0
+                for i in range(N):
+                    self.ensemble[i][nsteps+1+step].assign(Xopt[0])
                     # get the randomised noise for this step
-                    self.model.randomize(Xopt)  # not efficient!
+                    self.model.randomize(
+                        self.new_ensemble[i])  # not efficient!
                     # just copy in the current component
-                    self.ensemble[i][1+step].assign(Xopt[1+step])
+                    self.ensemble[i][1+step].assign(
+                        self.new_ensemble[i][1+step])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
             compute_diagnostics(diagnostics,
