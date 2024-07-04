@@ -112,7 +112,7 @@ class Euler_mixSD(base_model):
 
         # source term
         Q = fd.Function(Vdg)
-        Q.interpolate(0.1*fd.sin(8*fd.pi*x[0]))
+        Q.interpolate(0.5*fd.sin(8*fd.pi*x[0]))
 
         F = (self.q1-self.q0)*p*dx + Dt*p*(r*self.q1-Q)*dx\
             + Dt*(fd.dot(fd.grad(p), -qh*gradperp(psi_mod)))*dx\
@@ -120,7 +120,7 @@ class Euler_mixSD(base_model):
             + (fd.inner(fd.grad(self.psi1), fd.grad(phi)))*dx\
             + self.psi1*phi*dx + self.q1*phi*dx
         if not self.salt:
-            F += self.noise_scale*p*self.dU_3*Dt**0.5*dx
+            F += Dt*self.noise_scale*p*self.dU_3*Dt**0.5*dx
 
         # timestepping solver
         qphi_prob = fd.NonlinearVariationalProblem(F, self.qpsi1, bcs=bc)
@@ -172,7 +172,7 @@ class Euler_mixSD(base_model):
 
     def obs(self):
         Y = fd.Function(self.VVOM)
-        Y.interpolate(self.qpsi0[0])
+        Y.interpolate(self.qpsi0[1])
         return Y
 
     def allocate(self):
