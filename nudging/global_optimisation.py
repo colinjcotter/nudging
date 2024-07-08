@@ -4,7 +4,7 @@ from functools import reduce
 from pyadjoint.enlisting import Enlist
 from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
 import firedrake.adjoint as fadj
-
+from pyop2.mpi import MPI
 
 class ensemble_petsc_interface:
     def __init__(self, X, ensemble):
@@ -45,6 +45,8 @@ class ensemble_petsc_interface:
         with w.dat.vec_ro as wvec:
             local_size = wvec.local_size
             global_size = wvec.size
+        global_size = self.ensemble.ensemble_comm.allreduce(
+            sendobj=global_size, op=MPI.SUM)
         sizes = (local_size, global_size)
         self.sizes = sizes
         # some useful working memory
