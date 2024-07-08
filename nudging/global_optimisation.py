@@ -44,10 +44,7 @@ class ensemble_petsc_interface:
         # sniff the sizes to create the global PETSc Vec
         with w.dat.vec_ro as wvec:
             local_size = wvec.local_size
-            global_size = wvec.size
-        global_size = self.ensemble.ensemble_comm.allreduce(
-            sendobj=global_size, op=MPI.SUM)
-        sizes = (local_size, global_size)
+        sizes = (local_size, PETSc.DETERMINE)
         self.sizes = sizes
         # some useful working memory
         self.w = w
