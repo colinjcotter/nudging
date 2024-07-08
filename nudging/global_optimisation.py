@@ -203,6 +203,6 @@ class ensemble_tao_solver:
         Returns:
             List of OverloadedType
         """
-        self.tao.solve()
-        X = self.interface.vec2list(self.x)
+        x = self.tao.solve()
+        X = self.interface.vec2list(x)
         return X
