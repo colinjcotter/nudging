@@ -48,6 +48,11 @@ class ensemble_petsc_interface:
         self.sizes = sizes
         # some useful working memory
         self.w = w
+        gcomm = self.ensemble.global_comm
+        with w.dat.vec as fvec:
+            self.vec = PETSc.Vec().createWithArray(fvec.array,
+                                                   size=self.sizes,
+                                                   comm=gcomm)
 
     def vec2list(self, vec):
         """
@@ -95,13 +100,9 @@ class ensemble_petsc_interface:
         # get copy of self.w vec and return
         # we have to do it this way so we can copy from
         # local to global correctly.
-        w1 = self.w.copy(deepcopy=True)
-        gcomm = self.ensemble.global_comm
-        with w1.dat.vec as fvec:
-            vec = PETSc.Vec().createWithArray(fvec.array,
-                                              size=self.sizes,
-                                              comm=gcomm)
-        vec.setFromOptions()
+        vec = self.vec.duplicate()
+        with self.w.dat.vec as fvec:
+            fvec.copy(vec)
         return vec
 
 
@@ -135,7 +136,7 @@ class ParameterisedEnsembleReducedFunctional:
 
 class ensemble_tao_solver:
     def __init__(self, Jhat, ensemble,
-                 solver_parameters, options_prefix=""):
+                 solver_parameters, options_prefix="ensemble"):
         """
         Jhat - firedrake.EnsembleReducedFunctional
         ensemble - Firedrake.Ensemble ensemble communication object
@@ -147,6 +148,7 @@ class ensemble_tao_solver:
         tao = PETSc.TAO().create(comm=ensemble.global_comm)
 
         def objective_gradient(tao, x, g):
+            PETSc.Sys.Print("Objective gradient")
             X = interface.vec2list(x)
             J_val = Jhat(X)
             dJ = Jhat.derivative()
@@ -183,6 +185,7 @@ class ensemble_tao_solver:
         tao.setGradientNorm(M)
 
         flat_solver_parameters = flatten_parameters(solver_parameters)
+        PETSc.Sys.Print("ops", flat_solver_parameters)
         options = OptionsManager(flat_solver_parameters,
                                  options_prefix)
         tao.setOptionsPrefix(options.options_prefix)

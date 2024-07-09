@@ -12,14 +12,15 @@ A = 1.
 D = 2.
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 10  # 10000
+p_per_rank = 5  # 10000
 nranks = 10
 nensemble = [p_per_rank]*nranks
 
 myfilter = jittertemp_filter(n_jitt=0, delta=0.15,
                              verbose=2, MALA=False,
-                             nudging=True)
-myfilter.setup(nensemble=nensemble, model=model, residual=False)
+                             visualise_tape="sde.pdf", nudging=True)
+myfilter.setup(nensemble=nensemble, model=model,
+               residual=False)
 
 # data
 y = model.obs()

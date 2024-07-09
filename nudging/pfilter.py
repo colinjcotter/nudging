@@ -276,16 +276,103 @@ class jittertemp_filter(base_filter):
         dtheta = self.dtheta_arr.data()[0]
         return dtheta
 
+    @PETSc.Log.EventDecorator("Tape Nudging")
+    def tape_nudging(self, y, log_likelihood):
+        nsteps = self.model.nsteps
+        N = self.nensemble[self.ensemble_rank]
+        
+        if self.verbose > 0:
+            PETSc.Sys.Print("taping forward model for nudging")
+        self.y = y
+        Js = []  # list of lists of functionals
+        Controls = [[]]*nsteps  # things to pass to RF constructor
+        self.Control_inputs = [[]]*nsteps # things to pass to RF.__call__
+        Parameters = [[]]*nsteps  # things to pass to RF constructor
+        self.Parameter_inputs = [[]]*nsteps  # pass to RF.update_...
+        assert self.model.lambdas  # can't nudge without lambdas
+        BigJ_floats = []  # inputs for functional that takes
+        #                   in all the Js
+        for i in range(N):  # build functionals for each particle
+            for step in range(nsteps):
+                #  adding Lambda to the controls for this step
+                self.Control_inputs[step].append(
+                    self.ensemble[i][nsteps+1+step])
+                Controls[step].append(fadj.Control(
+                    self.ensemble[i][nsteps+1+step]))
+                #  adding model state to the parameters
+                self.Parameter_inputs[step].append(
+                    self.ensemble[i][0])
+                Parameters[step].append(
+                    fadj.Control(self.ensemble[i][0]))
+                #  adding noise values to the parameters
+                for step2 in range(nsteps):
+                    self.Parameter_inputs[step].append(
+                        self.ensemble[i][1+step])
+                    Parameters[step].append(
+                        fadj.Control(self.ensemble[i][1+step]))
+
+                    #  adding Lambda for other steps as parameters
+                    for step2 in range(nsteps):
+                        if step2 == step:
+                            continue
+                        self.Parameter_inputs[step].append(
+                            self.ensemble[i][nsteps+1+step2])
+                        Parameters[step].append(fadj.Control(
+                            self.ensemble[i][nsteps+1+step2]))
+
+            # tape model for local particle i
+            self.model.run(self.ensemble[i],
+                           self.new_ensemble[i])
+            Y = self.model.obs()
+            nudge_J = fd.assemble(log_likelihood(y, Y))
+            nudge_J += self.model.lambda_functional()
+            Js.append(nudge_J)
+            assert isinstance(nudge_J, OverloadedType)
+        #  adding in the data as a parameter
+        self.Parameter_inputs[step].append(self.y)
+        Parameters[step].append(fadj.Control(self.y))
+
+        if self.visualise_tape:
+            PETSc.Sys.Print("visualising")
+            tape = get_working_tape()
+            assert isinstance(self.visualise_tape, str)
+            tape.visualise_pdf(self.visualise_tape)
+            
+        # build the RF that maps from the Js to the BigJ
+        for i in range(np.sum(self.nensemble)):
+            BigJ_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
+        BigJ = -(2 + self.sigma)*logsumexp_adjfloat(BigJ_floats,
+                                                    factor=-1.0)
+        BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
+        BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
+        BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
+        # reduced functionals for each step
+        # they differ by the derivative components
+        self.Jhat_solvers = []  # list of Tao solvers
+        self.rfs = []
+        # we only update lambdas[step] on timestep step
+        assert len(Parameters[step]) == \
+            len(self.Parameter_inputs[step])
+        rf = ParameterisedEnsembleReducedFunctional(
+            Js, Controls[step], Parameters[step],
+            self.subcommunicators,
+            gather_functional=BigJhat)
+        self.rfs.append(rf)
+        solver = ensemble_tao_solver(
+            rf, self.subcommunicators,
+            solver_parameters=self.tao_params)
+        self.Jhat_solvers.append(solver)
+    
     def assimilation_step(self, y, log_likelihood,
                           diagnostics=[],
                           ess_tol=0.8, tao_params=None):
-        if not tao_params:
-            tao_params = {
-                "tao_type": "lmvm",
-                "tao_cg_type": "pr",
-                "tao_monitor": None,
-                "tao_converged_reason": None
-            }
+        #if not tao_params:
+        self.tao_params = {
+            "tao_type": "lmvm",
+            "tao_cg_type": "pr",
+            "tao_monitor": None,
+            "tao_converged_reason": None
+        }
 
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
@@ -317,95 +404,7 @@ class jittertemp_filter(base_filter):
                     MALA_J, m, derivative_components=cpts)
 
             if self.nudging:
-                if self.verbose > 0:
-                    PETSc.Sys.Print("taping forward model for nudging")
-                self.y = y
-                Js = []  # list of lists of functionals
-                Controls = [[]]*nsteps  # things to pass to RF constructor
-                self.Control_inputs = [[]]*nsteps # things to pass to RF.__call__
-                Parameters = [[]]*nsteps  # things to pass to RF constructor
-                self.Parameter_inputs = [[]]*nsteps  # pass to RF.update_...
-                assert self.model.lambdas  # can't nudge without lambdas
-                BigJ_floats = []  # inputs for functional that takes
-                #                   in all the Js
-                for i in range(N):  # build functionals for each particle
-                    for step in range(nsteps):
-                        #  adding Lambda to the controls for this step
-                        self.Control_inputs[step].append(
-                            self.ensemble[i][nsteps+1+step])
-                        Controls[step].append(fadj.Control(
-                            self.ensemble[i][nsteps+1+step]))
-                        #  adding model state to the parameters
-                        self.Parameter_inputs[step].append(
-                            self.ensemble[i][0])
-                        Parameters[step].append(
-                            fadj.Control(self.ensemble[i][0]))
-                        #  adding noise values to the parameters
-                        for step2 in range(nsteps):
-                            self.Parameter_inputs[step].append(
-                                self.ensemble[i][1+step])
-                            Parameters[step].append(
-                                fadj.Control(self.ensemble[i][1+step]))
-
-                        #  adding Lambda for other steps as parameters
-                        for step2 in range(nsteps):
-                            if step2 == step:
-                                continue
-                            self.Parameter_inputs[step].append(
-                                self.ensemble[i][nsteps+1+step2])
-                            Parameters[step].append(fadj.Control(
-                                self.ensemble[i][nsteps+1+step2]))
-
-                    # tape model for local particle i
-                    self.model.run(self.ensemble[i],
-                                   self.new_ensemble[i])
-                    Y = self.model.obs()
-                    nudge_J = fd.assemble(log_likelihood(y, Y))
-                    nudge_J += self.model.lambda_functional()
-                    Js.append(nudge_J)
-                    assert isinstance(nudge_J, OverloadedType)
-                    #  adding in the data as a parameter
-                    self.Parameter_inputs[step].append(self.y)
-                    Parameters[step].append(fadj.Control(self.y))
-
-                for i in range(np.sum(self.nensemble)):
-                    BigJ_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
-                # build the RF that maps from the Js to the BigJ
-                BigJ = -(2 + self.sigma)*logsumexp_adjfloat(BigJ_floats,
-                                                            factor=-1.0)
-                BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
-                BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
-                BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
-                # reduced functionals for each step
-                # they differ by the derivative components
-                self.Jhat_solvers = []  # list of Tao solvers
-                self.rfs = []
-                for step in range(nsteps):
-                    # 0 component is state
-                    # 1 .. step is noise
-                    # step + 1 .. 2*step is lambdas
-                    offset = 0
-                    cpts = []
-                    for i in range(N):
-                        cpts.append(offset + step)
-                        offset += len(self.ensemble[i])
-                    # we only update lambdas[step] on timestep step
-                    assert len(Parameters[step]) == \
-                        len(self.Parameter_inputs[step])
-                    rf = ParameterisedEnsembleReducedFunctional(
-                        Js, Controls[step], Parameters[step],
-                        self.subcommunicators,
-                        gather_functional=BigJhat)
-                    self.rfs.append(rf)
-                    solver = ensemble_tao_solver(
-                        rf, self.subcommunicators,
-                        solver_parameters=tao_params)
-                    self.Jhat_solvers.append(solver)
-
-            if self.visualise_tape:
-                tape = get_working_tape()
-                assert isinstance(self.visualise_tape, str)
-                tape.visualise_pdf(self.visualise_tape)
+                self.tape_nudging(y, log_likelihood)
             pause_annotation()
 
         if self.nudging:
@@ -419,13 +418,15 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
             # nudging one step at a time
             for step in range(nsteps):
+                PETSc.Sys.Print(step, "step")
                 # update with current noise and lambda values
                 self.rfs[step].update_parameters(self.Parameter_inputs[step])
+                PETSc.Sys.Print("forward")
                 self.rfs[step](self.Control_inputs[step])
                 # get the minimum over current lambda
                 if self.verbose > 1:
                     PETSc.Sys.Print("Solving for Lambda step ", step)
-
+                PETSc.Sys.Print("solving")
                 Xopt = self.Jhat_solvers[step].solve()
                 assert isinstance(Xopt[0], fd.Function)
                 # place the optimal value of lambda into ensemble
