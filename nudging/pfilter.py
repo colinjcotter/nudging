@@ -351,18 +351,19 @@ class jittertemp_filter(base_filter):
         self.Jhat_solvers = []  # list of Tao solvers
         self.rfs = []
         # we only update lambdas[step] on timestep step
-        assert len(Parameters[step]) == \
-            len(self.Parameter_inputs[step])
-        rf = ParameterisedEnsembleReducedFunctional(
-            Js, Controls[step], Parameters[step],
-            self.subcommunicators,
-            gather_functional=BigJhat)
-        self.rfs.append(rf)
-        solver = ensemble_tao_solver(
-            rf, self.subcommunicators,
-            solver_parameters=self.tao_params)
-        self.Jhat_solvers.append(solver)
-    
+        for step in range(nsteps):
+            assert len(Parameters[step]) == \
+                len(self.Parameter_inputs[step])
+            rf = ParameterisedEnsembleReducedFunctional(
+                Js, Controls[step], Parameters[step],
+                self.subcommunicators,
+                gather_functional=BigJhat)
+            self.rfs.append(rf)
+            solver = ensemble_tao_solver(
+                rf, self.subcommunicators,
+                solver_parameters=self.tao_params)
+            self.Jhat_solvers.append(solver)
+
     def assimilation_step(self, y, log_likelihood,
                           diagnostics=[],
                           ess_tol=0.8, tao_params=None):
