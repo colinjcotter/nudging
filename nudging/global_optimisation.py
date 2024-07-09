@@ -128,11 +128,9 @@ class ParameterisedEnsembleReducedFunctional:
 
     def __call__(self, inputs):
         full_inputs = inputs + self.Parameters
-        PETSc.Sys.Print("CALL IN PERF")
         return self.rf(full_inputs)
 
     def derivative(self):
-        PETSc.Sys.Print("DER IN PERF")
         der = self.rf.derivative()
         return [der[i] for i in self.derivative_components]
 
@@ -208,7 +206,7 @@ class ensemble_tao_solver:
 
         log_level = logging.getLogger().getEffectiveLevel()
         logging.disable(logging.CRITICAL)
-        
+
         self.tao.solve()
         X = self.interface.vec2list(self.x)
         return X

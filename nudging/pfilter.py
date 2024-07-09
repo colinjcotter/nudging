@@ -307,9 +307,9 @@ class jittertemp_filter(base_filter):
                 #  adding noise values to the parameters
                 for step2 in range(nsteps):
                     self.Parameter_inputs[step].append(
-                        self.ensemble[i][1+step])
+                        self.ensemble[i][1+step2])
                     Parameters[step].append(
-                        fadj.Control(self.ensemble[i][1+step]))
+                        fadj.Control(self.ensemble[i][1+step2]))
 
                     #  adding Lambda for other steps as parameters
                     for step2 in range(nsteps):
@@ -433,7 +433,7 @@ class jittertemp_filter(base_filter):
                 # place the optimal value of lambda into ensemble
                 offset = 0
                 for i in range(N):
-                    self.ensemble[i][nsteps+1+step].assign(Xopt[0])
+                    self.ensemble[i][nsteps+1+step].assign(Xopt[i])
                     # get the randomised noise for this step
                     self.model.randomize(
                         self.new_ensemble[i])  # not efficient!
