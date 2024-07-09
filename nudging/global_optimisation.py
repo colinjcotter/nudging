@@ -5,6 +5,7 @@ from pyadjoint.enlisting import Enlist
 from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
 import firedrake.adjoint as fadj
 from pyop2.mpi import MPI
+import logging
 
 class ensemble_petsc_interface:
     def __init__(self, X, ensemble):
@@ -127,9 +128,11 @@ class ParameterisedEnsembleReducedFunctional:
 
     def __call__(self, inputs):
         full_inputs = inputs + self.Parameters
+        PETSc.Sys.Print("CALL IN PERF")
         return self.rf(full_inputs)
 
     def derivative(self):
+        PETSc.Sys.Print("DER IN PERF")
         der = self.rf.derivative()
         return [der[i] for i in self.derivative_components]
 
@@ -163,19 +166,16 @@ class ensemble_tao_solver:
                 # using L2 norm/inner product
                 W = interface.mixed_function_space
                 self.v = fd.TestFunction(W)
+                self.ycofunc = fd.Cofunction(W.dual())
 
             def mult(self, mat, X, Y):
                 # abusing vec2list side effect of copying to interface.w
                 self.interface.vec2list(X)
-                ycofunc = fd.assemble(fd.inner(self.v,
-                                               self.interface.w)*fd.dx)
+                fd.assemble(fd.inner(self.v, self.interface.w)*fd.dx,
+                            tensor=self.ycofunc)
                 gcomm = ensemble.global_comm
-                with ycofunc.dat.vec as fvec:
-                    vec = PETSc.Vec().createWithArray(fvec.array,
-                                                      size=interface.sizes,
-                                                      comm=gcomm)
-                vec.setFromOptions()
-                vec.copy(Y)
+                with self.ycofunc.dat.vec_ro as yvec:
+                    yvec.copy(Y)
 
         sizes = interface.sizes
         M = PETSc.Mat().createPython([sizes, sizes],
@@ -205,6 +205,12 @@ class ensemble_tao_solver:
         Returns:
             List of OverloadedType
         """
+
+        log_level = logging.getLogger().getEffectiveLevel()
+        logging.disable(logging.CRITICAL)
+        
         self.tao.solve()
         X = self.interface.vec2list(self.x)
         return X
+
+        logging.disable(log_level)
