@@ -9,34 +9,34 @@ T = 1.
 nsteps = 10
 dt = T/nsteps
 A = 1.
-D = 2.
+D = 1.0e-1
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
 p_per_rank = 5  # 10000
-nranks = 10
+nranks = 20
 nensemble = [p_per_rank]*nranks
 
 myfilter = jittertemp_filter(n_jitt=0, delta=0.15,
                              verbose=2, MALA=False,
-                             visualise_tape="sde.pdf", nudging=True)
+                             visualise_tape=False, nudging=True, sigma=0.01)
 myfilter.setup(nensemble=nensemble, model=model,
                residual=False)
 
 # data
 y = model.obs()
-y0 = 1.2
+y0 = -0.05563397349186569 #  need to update from invariant distribution
 y.dat.data[:] = y0
 
 # prepare the initial ensemble
-c = 1.
-d = 1.
+c = 0.
+d = D**2/2/A
 for i in range(nensemble[myfilter.ensemble_rank]):
-    dx0 = model.rg.normal(model.R, c, d**2)
+    dx0 = model.rg.normal(model.R, c, d)
     u = myfilter.ensemble[i][0]
     u.assign(dx0)
 
 # observation noise standard deviation
-S = 0.3
+S = 0.1
 
 
 def log_likelihood(y, Y):
@@ -64,9 +64,22 @@ nolambdasamples = samples(Stage.WITHOUT_LAMBDAS,
 diagnostics = [nudgingsamples,
                resamplingsamples,
                nolambdasamples]
+
+tao_params = {
+    "tao_type": "lmvm",
+    "tao_monitor": None,
+    "tao_converged_reason": None,
+    "tao_gatol": 1.0e-4,
+    "tao_grtol": 1.0e-50,
+    "tao_gttol": 1.0e-3,
+}
+
+
 myfilter.assimilation_step(y, log_likelihood,
                            diagnostics=diagnostics,
-                           ess_tol=-666)
+                           ess_tol=-666,
+                           taylor_test=False,
+                           tao_params=tao_params)
 
 if myfilter.subcommunicators.global_comm.rank == 0:
     before, descriptors = nolambdasamples.get_archive()
@@ -79,14 +92,9 @@ if myfilter.subcommunicators.global_comm.rank == 0:
     bs_mean = np.mean(resampled)
     bs_var = np.var(resampled)
 
-    # analytical formula
-    # x(1)|y ~ N((b^2y + S^2a)/(b^2+S^2), (b^2S^2)/(b^2 + S^2))
-    # where a = c*exp(A), b = (sig^2+d^2*exp(2A))
-    # sig^2 = (D^2/2A)*(e^{2A} - 1)
-    a = c*exp(A)
-    sigsq = D**2/2/A*(exp(2*A) - 1)  # t = 1
-    b = sigsq + d**2*exp(2*A)
-    tmean = (b**2*y0 + S**2*a)/(b**2 + S**2)
-    tvar = b**2*S**2/(b**2 + S**2)
+    sigsq = D**2/2/A*(1 - exp(-2*A))
+    Sigsq = sigsq + d
+    tmean = (Sigsq*y0 + exp(-A)*S**2*a)/(Sigsq + S**2)
+    tvar = Sigsq*S**2/(Sigsq + S**2)
 
     print(tmean, bs_mean, tvar, bs_var)

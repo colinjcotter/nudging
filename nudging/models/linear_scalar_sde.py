@@ -25,6 +25,7 @@ class LSDEModel(base_model):
         self.V = fd.FunctionSpace(self.mesh, "DG", 0)
         self.u = fd.Function(self.V)
         self.dW = fd.Function(self.V)
+        self.Lambda = fd.Function(self.V)
 
         # state for controls
         self.X = self.allocate()
@@ -43,15 +44,18 @@ class LSDEModel(base_model):
         u = self.u
         dW = self.dW
         dt = self.dt
-        A = self.A
+        A = -self.A
+        D = self.D
 
+        if self.lambdas:
+            self.Lambda.assign(0.)
         for step in range(self.nsteps):
             if self.lambdas:
-                dW.assign(self.X[step+1]
-                          + dt**0.5*self.X[self.nsteps+step+1])
+                self.Lambda.assign(self.Lambda + self.X[self.nsteps+step+1])
+                dW.assign(self.X[step+1] + dt**0.5*self.Lambda)
             else:
                 dW.assign(self.X[step+1])
-            u.assign(u*(1 + dt*A) + dt**0.5*dW)
+            u.assign(u*(1 + dt*A) + D*dt**0.5*dW)
         X1[0].assign(self.u)
 
     def controls(self):
@@ -101,11 +105,13 @@ class LSDEModel(base_model):
         # volume integral by dividing by cell volume.
 
         dx = fd.dx
+        self.Lambda.assign(0.)
         for step in range(nsteps):
             # X[0] is the model state
             # X[1], .., X[nsteps] are the dWs
             # X[nsteps+1], .., X[2*nsteps] are the lambdas
-            lambda_step = self.X[nsteps + 1 + step]
+            self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
+            lambda_step = self.Lambda
             dW_step = self.X[1 + step]
             cv = 1.0  # should be fd.CellVolume(self.mesh)
             # but was breaking the graph

@@ -1,8 +1,10 @@
 from abc import ABCMeta, abstractmethod
 import firedrake as fd
+import logging
 import firedrake.adjoint as fadj
 from pyadjoint import exp as pexp
 from pyadjoint import log as plog
+from pyadjoint.adjfloat import max as pmax
 from pyadjoint import OverloadedType
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
@@ -11,7 +13,7 @@ from .diagnostics import compute_diagnostics, Stage, archive_diagnostics
 import numpy as np
 from .parallel_arrays import DistributedDataLayout1D, SharedArray, OwnedArray
 from firedrake.adjoint import pause_annotation, continue_annotation, \
-    get_working_tape
+    get_working_tape, taylor_test
 from .global_optimisation import ensemble_tao_solver, \
         ParameterisedEnsembleReducedFunctional
 
@@ -21,14 +23,14 @@ def logsumexp(x):
     return c + np.log(np.sum(np.exp(x - c)))
 
 
-def logsumexp_adjfloat(x, factor=1.0):
+def logsumexp_adjfloat(x, factor=fadj.AdjFloat(1.0)):
     c = factor*x[0]
     for i in range(1, len(x)):
-        c = max(c, factor*x[i])
+        c = pmax(c, factor*x[i])
     sumexp = pexp(factor*x[0] - c)
     for i in range(1, len(x)):
-        sumexp += pexp(factor*x[0] - c)
-    c += plog(sumexp)
+        sumexp = sumexp + pexp(factor*x[i] - c)
+    c = c + plog(sumexp)
     return c
 
 
@@ -280,15 +282,15 @@ class jittertemp_filter(base_filter):
     def tape_nudging(self, y, log_likelihood):
         nsteps = self.model.nsteps
         N = self.nensemble[self.ensemble_rank]
-        
+
         if self.verbose > 0:
             PETSc.Sys.Print("taping forward model for nudging")
         self.y = y
         Js = []  # list of lists of functionals
-        Controls = [[]]*nsteps  # things to pass to RF constructor
-        self.Control_inputs = [[]]*nsteps # things to pass to RF.__call__
-        Parameters = [[]]*nsteps  # things to pass to RF constructor
-        self.Parameter_inputs = [[]]*nsteps  # pass to RF.update_...
+        Controls = [[] for i in range(nsteps)]  # things to pass to RF constructor
+        self.Control_inputs = [[] for i in range(nsteps)] # things to pass to RF.__call__
+        Parameters = [[] for i in range(nsteps)]  # things to pass to RF constructor
+        self.Parameter_inputs = [[] for i in range(nsteps)]  # pass to RF.update_...
         assert self.model.lambdas  # can't nudge without lambdas
         BigJ_floats = []  # inputs for functional that takes
         #                   in all the Js
@@ -299,6 +301,7 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][nsteps+1+step])
                 Controls[step].append(fadj.Control(
                     self.ensemble[i][nsteps+1+step]))
+                lens = [len(Control) for Control in Controls]
                 #  adding model state to the parameters
                 self.Parameter_inputs[step].append(
                     self.ensemble[i][0])
@@ -337,27 +340,53 @@ class jittertemp_filter(base_filter):
             tape = get_working_tape()
             assert isinstance(self.visualise_tape, str)
             tape.visualise_pdf(self.visualise_tape)
-            
-        # build the RF that maps from the Js to the BigJ
+
+        # inputs to the RFs that map from the Js to the BigJ
         for i in range(np.sum(self.nensemble)):
             BigJ_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
-        BigJ = -(2 + self.sigma)*logsumexp_adjfloat(BigJ_floats,
-                                                    factor=-1.0)
-        BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
-        BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
-        BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
+
         # reduced functionals for each step
         # they differ by the derivative components
         self.Jhat_solvers = []  # list of Tao solvers
         self.rfs = []
         # we only update lambdas[step] on timestep step
         for step in range(nsteps):
+            # build the RF that maps from the Js to the BigJ
+            BigJ = -2*logsumexp_adjfloat(BigJ_floats,
+                                         factor=-1.0)
+            BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
+            for Jfloat in BigJ_floats:
+                BigJ += Jfloat**2*self.sigma
+            BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
+            BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
+            
             assert len(Parameters[step]) == \
                 len(self.Parameter_inputs[step])
             rf = ParameterisedEnsembleReducedFunctional(
                 Js, Controls[step], Parameters[step],
                 self.subcommunicators,
                 gather_functional=BigJhat)
+            for input0 in self.Control_inputs[step]:
+                input0.assign(1.0)
+
+            if self.taylor_test:
+                #  a bit of Taylor testing
+                log_level = logging.getLogger().getEffectiveLevel()
+                logging.disable(logging.CRITICAL)
+
+                rf(self.Control_inputs[step])
+                Drf = rf.derivative()
+                dJdm = 0.
+                pert = self.Control_inputs[step]
+                for i, D in enumerate(Drf):
+                    dJdm += fd.assemble(fd.inner(D, pert[i])*fd.dx)
+                dJdm = self.subcommunicators.ensemble_comm.allreduce(
+                    dJdm, op=MPI.SUM)
+                assert taylor_test(
+                    rf, self.Control_inputs[step],
+                    self.Control_inputs[step], dJdm=dJdm) > 1.9
+                from sys import exit; exit()
+
             self.rfs.append(rf)
             solver = ensemble_tao_solver(
                 rf, self.subcommunicators,
@@ -366,15 +395,23 @@ class jittertemp_filter(base_filter):
 
     def assimilation_step(self, y, log_likelihood,
                           diagnostics=[],
-                          ess_tol=0.8, tao_params=None):
-        #if not tao_params:
-        self.tao_params = {
-            "tao_type": "lmvm",
-            "tao_cg_type": "pr",
-            "tao_monitor": None,
-            "tao_converged_reason": None
-        }
+                          ess_tol=0.8, tao_params=None,
+                          taylor_test=False):
+        if not tao_params:
+            self.tao_params = {
+                #"tao_ls_monitor": None,
+                "tao_type": "lmvm",
+                "tao_monitor": None,
+                "tao_converged_reason": None,
+                "tao_gatol": 1.0e-50,
+                "tao_grtol": 1.0e-50,
+                "tao_gttol": 1.0e-4,
+            }
+        else:
+            self.tao_params = tao_params
 
+        self.taylor_test=taylor_test
+        
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)

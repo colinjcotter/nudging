@@ -128,12 +128,13 @@ class ParameterisedEnsembleReducedFunctional:
 
     def __call__(self, inputs):
         full_inputs = inputs + self.Parameters
-        return self.rf(full_inputs)
+        val = self.rf(full_inputs)
+        return val
 
     def derivative(self):
         der = self.rf.derivative()
-        return [der[i] for i in self.derivative_components]
-
+        val = [der[i] for i in self.derivative_components]
+        return val
 
 class ensemble_tao_solver:
     def __init__(self, Jhat, ensemble,
@@ -149,7 +150,6 @@ class ensemble_tao_solver:
         tao = PETSc.TAO().create(comm=ensemble.global_comm)
 
         def objective_gradient(tao, x, g):
-            PETSc.Sys.Print("Objective gradient")
             X = interface.vec2list(x)
             J_val = Jhat(X)
             dJ = Jhat.derivative()
@@ -183,7 +183,6 @@ class ensemble_tao_solver:
         tao.setGradientNorm(M)
 
         flat_solver_parameters = flatten_parameters(solver_parameters)
-        PETSc.Sys.Print("ops", flat_solver_parameters)
         options = OptionsManager(flat_solver_parameters,
                                  options_prefix)
         tao.setOptionsPrefix(options.options_prefix)
