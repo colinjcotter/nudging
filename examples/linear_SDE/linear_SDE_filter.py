@@ -12,13 +12,13 @@ A = 1.
 D = 1.0e-1
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 5  # 10000
+p_per_rank = 500
 nranks = 20
 nensemble = [p_per_rank]*nranks
 
 myfilter = jittertemp_filter(n_jitt=0, delta=0.15,
                              verbose=2, MALA=False,
-                             visualise_tape=False, nudging=True, sigma=0.01)
+                             visualise_tape=False, nudging=False, sigma=0.01)
 myfilter.setup(nensemble=nensemble, model=model,
                residual=False)
 
@@ -92,9 +92,9 @@ if myfilter.subcommunicators.global_comm.rank == 0:
     bs_mean = np.mean(resampled)
     bs_var = np.var(resampled)
 
-    sigsq = D**2/2/A*(1 - exp(-2*A))
+    sigsq = D**2/2/A*(1 - np.exp(-2*A))
     Sigsq = sigsq + d
-    tmean = (Sigsq*y0 + exp(-A)*S**2*a)/(Sigsq + S**2)
+    tmean = (Sigsq*y0 + np.exp(-A)*S**2*c)/(Sigsq + S**2)
     tvar = Sigsq*S**2/(Sigsq + S**2)
 
     print(tmean, bs_mean, tvar, bs_var)
