@@ -9,11 +9,11 @@ T = 1.
 nsteps = 10
 dt = T/nsteps
 A = 1.
-D = 1.0e-1
+D = 1.0
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 10
-nranks = 20
+p_per_rank = 1
+nranks = 32
 nensemble = [p_per_rank]*nranks
 
 myfilter = jittertemp_filter(n_jitt=0, delta=0.15,
@@ -71,7 +71,7 @@ tao_params = {
     "tao_converged_reason": None,
     "tao_gatol": 1.0e-4,
     "tao_grtol": 1.0e-50,
-    "tao_gttol": 1.0e-4,
+    "tao_gttol": 1.0e-5,
 }
 
 

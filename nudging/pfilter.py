@@ -464,10 +464,8 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][1+step].assign(
                         self.new_ensemble[i][1+step])
                 
-                PETSc.Sys.Print(step, "step")
                 # update with current noise and lambda values
                 self.rfs[step].update_parameters(self.Parameter_inputs[step])
-                PETSc.Sys.Print("forward")
                 self.rfs[step](self.Control_inputs[step])
                 # get the minimum over current lambda
                 if self.verbose > 1:
