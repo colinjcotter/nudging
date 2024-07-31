@@ -55,7 +55,7 @@ class LSDEModel(base_model):
                 dW.assign(self.X[step+1] + dt**0.5*self.Lambda)
             else:
                 dW.assign(self.X[step+1])
-            u.assign(u*(1 - dt*A) + D*dt**0.5*dW)
+            u.assign(u*(1 - dt*A/2) + D*dt**0.5*dW)/(1 + dt*A/2)
         X1[0].assign(self.u)
 
     def controls(self):

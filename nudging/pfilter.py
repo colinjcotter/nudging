@@ -456,6 +456,14 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
             # nudging one step at a time
             for step in range(nsteps):
+                for i in range(N):
+                    # get the randomised noise for this step
+                    self.model.randomize(
+                        self.new_ensemble[i])  # not efficient!
+                    # just copy in the current component
+                    self.ensemble[i][1+step].assign(
+                        self.new_ensemble[i][1+step])
+                
                 PETSc.Sys.Print(step, "step")
                 # update with current noise and lambda values
                 self.rfs[step].update_parameters(self.Parameter_inputs[step])
@@ -471,12 +479,6 @@ class jittertemp_filter(base_filter):
                 offset = 0
                 for i in range(N):
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
-                    # get the randomised noise for this step
-                    self.model.randomize(
-                        self.new_ensemble[i])  # not efficient!
-                    # just copy in the current component
-                    self.ensemble[i][1+step].assign(
-                        self.new_ensemble[i][1+step])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
             compute_diagnostics(diagnostics,

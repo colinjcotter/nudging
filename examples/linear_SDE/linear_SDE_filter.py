@@ -36,7 +36,7 @@ for i in range(nensemble[myfilter.ensemble_rank]):
     u.assign(dx0)
 
 # observation noise standard deviation
-S = 0.1
+S = 0.01
 
 
 def log_likelihood(y, Y):
@@ -71,7 +71,7 @@ tao_params = {
     "tao_converged_reason": None,
     "tao_gatol": 1.0e-4,
     "tao_grtol": 1.0e-50,
-    "tao_gttol": 1.0e-3,
+    "tao_gttol": 1.0e-4,
 }
 
 
