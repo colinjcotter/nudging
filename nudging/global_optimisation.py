@@ -172,7 +172,6 @@ class ensemble_tao_solver:
                 self.interface.vec2list(X)
                 fd.assemble(fd.inner(self.v, self.interface.w)*fd.dx,
                             tensor=self.ycofunc)
-                gcomm = ensemble.global_comm
                 with self.ycofunc.dat.vec_ro as yvec:
                     yvec.copy(Y)
 
