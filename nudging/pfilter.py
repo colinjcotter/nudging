@@ -287,10 +287,14 @@ class jittertemp_filter(base_filter):
             PETSc.Sys.Print("taping forward model for nudging")
         self.y = y
         Js = []  # list of lists of functionals
-        Controls = [[] for i in range(nsteps)]  # things to pass to RF constructor
-        self.Control_inputs = [[] for i in range(nsteps)] # things to pass to RF.__call__
-        Parameters = [[] for i in range(nsteps)]  # things to pass to RF constructor
-        self.Parameter_inputs = [[] for i in range(nsteps)]  # pass to RF.update_...
+        Controls = [[] for i in range(nsteps)]  # things to pass to RF
+        #  constructor
+        self.Control_inputs = [[] for i in range(nsteps)]  # things to
+        #  pass to RF.__call__
+        Parameters = [[] for i in range(nsteps)]  # things to pass to
+        #  RF constructor
+        self.Parameter_inputs = [[] for i in range(nsteps)]  # pass to
+        #  RF.update_...
         assert self.model.lambdas  # can't nudge without lambdas
         BigJ_floats = []  # inputs for functional that takes
         #                   in all the Js
@@ -301,7 +305,6 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][nsteps+1+step])
                 Controls[step].append(fadj.Control(
                     self.ensemble[i][nsteps+1+step]))
-                lens = [len(Control) for Control in Controls]
                 #  adding model state to the parameters
                 self.Parameter_inputs[step].append(
                     self.ensemble[i][0])
@@ -359,7 +362,7 @@ class jittertemp_filter(base_filter):
                 BigJ += Jfloat**2*self.sigma
             BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
             BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
-            
+
             assert len(Parameters[step]) == \
                 len(self.Parameter_inputs[step])
             rf = ParameterisedEnsembleReducedFunctional(
@@ -371,7 +374,6 @@ class jittertemp_filter(base_filter):
 
             if self.taylor_test:
                 #  a bit of Taylor testing
-                log_level = logging.getLogger().getEffectiveLevel()
                 logging.disable(logging.CRITICAL)
 
                 rf(self.Control_inputs[step])
@@ -385,7 +387,8 @@ class jittertemp_filter(base_filter):
                 assert taylor_test(
                     rf, self.Control_inputs[step],
                     self.Control_inputs[step], dJdm=dJdm) > 1.9
-                from sys import exit; exit()
+                from sys import exit
+                exit()
 
             self.rfs.append(rf)
             solver = ensemble_tao_solver(
@@ -399,7 +402,6 @@ class jittertemp_filter(base_filter):
                           taylor_test=False):
         if not tao_params:
             self.tao_params = {
-                #"tao_ls_monitor": None,
                 "tao_type": "lmvm",
                 "tao_monitor": None,
                 "tao_converged_reason": None,
@@ -410,8 +412,8 @@ class jittertemp_filter(base_filter):
         else:
             self.tao_params = tao_params
 
-        self.taylor_test=taylor_test
-        
+        self.taylor_test = taylor_test
+
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
@@ -463,7 +465,7 @@ class jittertemp_filter(base_filter):
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(
                         self.new_ensemble[i][1+step])
-                
+
                 # update with current noise and lambda values
                 self.rfs[step].update_parameters(self.Parameter_inputs[step])
                 self.rfs[step](self.Control_inputs[step])
@@ -474,7 +476,6 @@ class jittertemp_filter(base_filter):
                 Xopt = self.Jhat_solvers[step].solve()
                 assert isinstance(Xopt[0], fd.Function)
                 # place the optimal value of lambda into ensemble
-                offset = 0
                 for i in range(N):
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)

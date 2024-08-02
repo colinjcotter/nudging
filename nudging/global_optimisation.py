@@ -4,8 +4,8 @@ from functools import reduce
 from pyadjoint.enlisting import Enlist
 from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
 import firedrake.adjoint as fadj
-from pyop2.mpi import MPI
 import logging
+
 
 class ensemble_petsc_interface:
     def __init__(self, X, ensemble):
@@ -135,6 +135,7 @@ class ParameterisedEnsembleReducedFunctional:
         der = self.rf.derivative()
         val = [der[i] for i in self.derivative_components]
         return val
+
 
 class ensemble_tao_solver:
     def __init__(self, Jhat, ensemble,

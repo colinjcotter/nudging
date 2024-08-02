@@ -1,4 +1,4 @@
-from firedrake import dx, exp
+from firedrake import dx
 from nudging import LSDEModel, \
     jittertemp_filter, base_diagnostic, Stage
 import numpy as np
@@ -12,7 +12,7 @@ A = 1.
 D = 1.0
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 1
+p_per_rank = 2
 nranks = 32
 nensemble = [p_per_rank]*nranks
 
@@ -24,7 +24,7 @@ myfilter.setup(nensemble=nensemble, model=model,
 
 # data
 y = model.obs()
-y0 = -0.05563397349186569 #  need to update from invariant distribution
+y0 = -0.05563397349186569  # need to update from invariant distribution
 y.dat.data[:] = y0
 
 # prepare the initial ensemble
