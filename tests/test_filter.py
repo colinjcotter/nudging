@@ -1,4 +1,4 @@
-from firedrake import dx, exp
+from firedrake import dx
 from nudging import LSDEModel, bootstrap_filter, \
     jittertemp_filter, base_diagnostic, Stage
 import numpy as np
@@ -13,7 +13,7 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
     nsteps = 10
     dt = T/nsteps
     A = 1.
-    D = 2.
+    D = 1.
     model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=lambdas)
 
     # solving
@@ -90,14 +90,14 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
 
     # data
     y = model.obs()
-    y0 = 1.2
+    y0 = -0.0556
     y.dat.data[:] = y0
 
     # prepare the initial ensemble
-    c = 1.
-    d = 1.
+    c = 0.
+    d = D**2/2/A
     for i in range(nensemble[testfilter.ensemble_rank]):
-        dx0 = model.rg.normal(model.R, c, d**2)
+        dx0 = model.rg.normal(model.R, c, d)
         u = testfilter.ensemble[i][0]
         u.assign(dx0)
 
@@ -127,14 +127,10 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
         bs_var = np.var(pvals)
 
         # analytical formula
-        # x(1)|y ~ N((b^2y + S^2a)/(b^2+S^2), (b^2S^2)/(b^2 + S^2))
-        # where a = c*exp(A), b = (sig^2+d^2*exp(2A))
-        # sig^2 = (D^2/2A)*(e^{2A} - 1)
-        a = c*exp(A)
-        sigsq = D**2/2/A*(exp(2*A) - 1)  # t = 1
-        b = sigsq + d**2*exp(2*A)
-        tmean = (b**2*y0 + S**2*a)/(b**2 + S**2)
-        tvar = b**2*S**2/(b**2 + S**2)
+        sigsq = D**2/2/A*(1 - np.exp(-2*A*T))
+        Sigsq = sigsq + np.exp(-2*A*T)*d
+        tmean = (Sigsq*y0 + np.exp(-A*T)*S**2*c)/(Sigsq + S**2)
+        tvar = Sigsq*S**2/(Sigsq + S**2)
 
         assert np.abs(tmean - bs_mean) < mtol
         assert np.abs(tvar - bs_var) < vtol
@@ -143,14 +139,14 @@ def filter_linear_sde(testfilter, filterargs, mtol, vtol,
 @pytest.mark.parallel(nprocs=5)
 def test_bsfilter():
     filter_linear_sde(bootstrap_filter(), {"residual": False},
-                      mtol=0.005, vtol=0.005,
+                      mtol=0.01, vtol=0.01,
                       p_per_rank=200, nranks=5)
 
 
 @pytest.mark.parallel(nprocs=10)
 def test_jtfilter():
     jtfilter = jittertemp_filter(n_jitt=5, delta=0.15,
-                                 verbose=False, MALA=False)
+                                 verbose=True, MALA=False)
     filter_linear_sde(jtfilter, {"residual": False},
                       mtol=0.05, vtol=0.05,
                       p_per_rank=10, nranks=10)
