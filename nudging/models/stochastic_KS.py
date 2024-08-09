@@ -140,7 +140,7 @@ class KS(base_model):
 
     def lambda_functional(self):
         nsteps = self.nsteps
-        dt = Constant(self.dt)
+        dt = fd.Constant(self.dt)
 
         # This should have the effect of returning
         # sum_n sum_i (dt*lambda_i^2/2 -  lambda_i*dW_i)
