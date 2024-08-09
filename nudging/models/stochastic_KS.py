@@ -5,13 +5,11 @@ import numpy as np
 
 
 class KS(base_model):
-    def __init__(self, n, nsteps, xpoints, seed=12353, lambdas=False,
+    def __init__(self, nsteps, xpoints, n=100, seed=12353, lambdas=False,
                  dt=0.01, nu=0.02923, dc=0.01, L=10.):
 
         self.n = n
         self.nsteps = nsteps
-        self.alpha = alpha
-        self.mu = mu
         self.dt = dt
         self.seed = seed
         self.nu = nu #  viscosity
@@ -21,14 +19,18 @@ class KS(base_model):
         self.lambdas = lambdas  # include lambdas in allocate
 
     def setup(self, comm=MPI.COMM_WORLD):
-        mesh = fd.PeriodicIntervalMesh(self.n, self.L, comm=comm)
+        mesh = fd.PeriodicIntervalMesh(self.n, self.L,
+                                       comm=comm, name="ksmesh")
+        self.mesh = mesh
         x, = fd.SpatialCoordinate(mesh)
 
-        V = fd.FunctionSpace(mesh, "hermite", 3)
+        V = fd.FunctionSpace(mesh, "Hermite", 3)
+        self.V = V
 
         un = fd.Function(V)
+        self.un = un
         unp1 = fd.Function(V)
-        
+        self.unp1 = unp1
         uh = (un + unp1)/2
         
         v = fd.TestFunction(V)
@@ -38,12 +40,13 @@ class KS(base_model):
 
         self.DG0 = fd.FunctionSpace(mesh, "DG", 0)
         dW = fd.Function(self.DG0)
-
+        self.dW = dW
         alpha = fd.Constant(1.0) # viscosity
         beta = fd.Constant(0.02923) # hyperviscosity
         gamma = fd.Constant(1.) # advection
         dc = fd.Constant(0.001) # diffusion coefficient for noise
         area = fd.CellVolume(mesh)
+        dx = fd.dx
 
         eqn = (
             v*(unp1 - un)*dx
@@ -113,12 +116,12 @@ class KS(base_model):
 
     def obs(self):
         Y = fd.Function(self.VVOM)
-        self.out.interpolate(self.un)
+        self.uout.interpolate(self.un)
         Y.interpolate(self.uout)
         return Y
 
     def allocate(self):
-        particle = [fd.Function(self.W)]
+        particle = [fd.Function(self.V)]
         for i in range(self.nsteps):
             dW = fd.Function(self.DG0)
             particle.append(dW)
