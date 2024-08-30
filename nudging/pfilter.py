@@ -335,8 +335,9 @@ class jittertemp_filter(base_filter):
             Js.append(nudge_J)
             assert isinstance(nudge_J, OverloadedType)
         #  adding in the data as a parameter
-        self.Parameter_inputs[step].append(self.y)
-        Parameters[step].append(fadj.Control(self.y))
+        for step in arange(nsteps):
+            self.Parameter_inputs[step].append(self.y)
+            Parameters[step].append(fadj.Control(self.y))
 
         if self.visualise_tape:
             PETSc.Sys.Print("visualising")
