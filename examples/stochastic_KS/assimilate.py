@@ -25,19 +25,12 @@ jtfilter.setup(nensemble, model)
 
 # load the initial ensemble
 erank = jtfilter.subcommunicators.ensemble_comm.rank
-offset = np.sum(nensemble[:erank])
-for i in range(nensemble[erank]):
-    u = jtfilter.ensemble[i]
-    WAS JUST ABOUT TO WRITE THIS BIT
-    dx0 = model.rg.normal(model.R, 0., 0.05)
-    dx1 = model.rg.normal(model.R, 0., 0.05)
-    a = model.rg.uniform(model.R, 0., 1.0)
-    b = model.rg.uniform(model.R, 0., 1.0)
-    u0_exp = (1+a)*0.2*2/(exp(x-403./15.+dx0)+exp(-x+403./15.+dx0))
-    u0_exp += (1+b)*0.5*2/(exp(x-203./15.+dx1)+exp(-x+203./15.+dx1))
-    _, u = jtfilter.ensemble[i][0].split()
-    u.interpolate(u0_exp)
-
+with CheckpointFile("ks_ensemble.h5", "r") as afile:
+    for i in range(nensemble[erank]):
+        NEED TO GET OFFSET
+        u = jtfilter.ensemble[i]
+        u0 = afile.load_function(model.mesh, "
+        #u.interpolate(u0_exp)
 
 def log_likelihood(y, Y):
     ll = (y-Y)**2/0.05**2/2*fd.dx

@@ -47,13 +47,16 @@ import math
 spread_steps = math.ceil(2./dt/nsteps)
 
 Hermite = fd.FunctionSpace(model.mesh, "Hermite", 3)
-uout = fd.Function(Hermite)
+uout = fd.Function(Hermite, name="u")
 
 with fd.CheckpointFile("ks_ensemble.h5", 'w') as afile:
     afile.save_mesh(model.mesh)
 
-    for i in range(Nensemble):
-        print("Generating ensemble member", i)
+    for i in range(Nensemble+1):
+        if i < Nensemble:
+            print("Generating ensemble member", i)
+        else:
+            print("Generating 'true' value")
         X = model.allocate()
         X[0].assign(X_start[0])
 
@@ -65,7 +68,6 @@ with fd.CheckpointFile("ks_ensemble.h5", 'w') as afile:
         afile.save_function(uout, idx=i)
 
 print("Generating the observational data.")
-X[0].assign(X_start[0])
 N_obs = 10
 params["N_obs"] = N_obs
 
