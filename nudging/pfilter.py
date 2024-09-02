@@ -360,7 +360,7 @@ class jittertemp_filter(base_filter):
                                          factor=-1.0)
             BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
             for Jfloat in BigJ_floats:
-                BigJ += Jfloat**2*self.sigma
+                BigJ += Jfloat*self.sigma
             BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
             BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
 
