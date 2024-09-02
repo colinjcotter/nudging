@@ -44,7 +44,7 @@ print("generating ensemble.")
 
 Nensemble = 200  # size of the ensemble
 import math
-spread_steps = math.ceil(2./dt/nsteps)
+spread_steps = math.ceil(10./dt/nsteps)
 
 Hermite = fd.FunctionSpace(model.mesh, "Hermite", 3)
 uout = fd.Function(Hermite, name="u")
