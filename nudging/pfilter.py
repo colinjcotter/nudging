@@ -335,8 +335,9 @@ class jittertemp_filter(base_filter):
             Js.append(nudge_J)
             assert isinstance(nudge_J, OverloadedType)
         #  adding in the data as a parameter
-        self.Parameter_inputs[step].append(self.y)
-        Parameters[step].append(fadj.Control(self.y))
+        for step in arange(nsteps):
+            self.Parameter_inputs[step].append(self.y)
+            Parameters[step].append(fadj.Control(self.y))
 
         if self.visualise_tape:
             PETSc.Sys.Print("visualising")
@@ -359,7 +360,7 @@ class jittertemp_filter(base_filter):
                                          factor=-1.0)
             BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
             for Jfloat in BigJ_floats:
-                BigJ += Jfloat**2*self.sigma
+                BigJ += Jfloat*self.sigma
             BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
             BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
 
