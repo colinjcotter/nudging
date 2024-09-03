@@ -44,10 +44,12 @@ print("generating ensemble.")
 
 Nensemble = 200  # size of the ensemble
 import math
-spread_steps = math.ceil(10./dt/nsteps)
+spread_steps = math.ceil(4./dt/nsteps)
 
 Hermite = fd.FunctionSpace(model.mesh, "Hermite", 3)
 uout = fd.Function(Hermite, name="u")
+
+X = model.allocate()
 
 with fd.CheckpointFile("ks_ensemble.h5", 'w') as afile:
     afile.save_mesh(model.mesh)
@@ -57,7 +59,6 @@ with fd.CheckpointFile("ks_ensemble.h5", 'w') as afile:
             print("Generating ensemble member", i)
         else:
             print("Generating 'true' value")
-        X = model.allocate()
         X[0].assign(X_start[0])
 
         for step in fd.ProgressBar("").iter(range(spread_steps)):
