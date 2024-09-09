@@ -74,6 +74,7 @@ class KS(base_model):
 
         #stuff for interpolation to VOM
         CG3 = fd.FunctionSpace(mesh, "CG", 3)
+        self.CG3 = CG3
         self.uout = fd.Function(CG3)
 
         # state for controls

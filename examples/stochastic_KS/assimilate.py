@@ -3,6 +3,7 @@ import nudging as ndg
 import numpy as np
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
+from firedrake.__future__ import interpolate
 
 import pickle
 
@@ -24,16 +25,19 @@ jtfilter = ndg.jittertemp_filter(n_jitt=4, delta=0.1, verbose=verbose)
 nensemble = [10]*20
 nspace = int(MPI.COMM_WORLD.size/len(nensemble))
 
-jtfilter.setup(nensemble, model, mesh=mesh)
+jtfilter.setup(nensemble, model)
 comm = jtfilter.subcommunicators.comm
+ecomm = jtfilter.subcommunicators.ensemble_comm
 # load the initial ensemble
 erank = ecomm.rank
 offset = np.concatenate((np.array([0]), np.cumsum(nensemble)))
 with fd.CheckpointFile("ks_ensemble.h5", "r", comm=comm) as afile:
+    mesh = afile.load_mesh("ksmesh")
     for i in range(nensemble[erank]):
         idx = i + offset[erank]
         u = jtfilter.ensemble[i][0]
         u0 = afile.load_function(mesh, "u", idx=i)
+        u0 = fd.assemble(interpolate(u0, model.CG3))
         u.interpolate(u0)
 
 def log_likelihood(y, Y):
