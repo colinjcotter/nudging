@@ -23,22 +23,18 @@ jtfilter = ndg.jittertemp_filter(n_jitt=4, delta=0.1, verbose=verbose)
 
 nensemble = [10]*20
 nspace = int(MPI.COMM_WORLD.size/len(nensemble))
-subcommunicators = fd.Ensemble(MPI.COMM_WORLD, nspace)
-ecomm = subcommunicators.ensemble_comm
-with fd.CheckpointFile("ks_ensemble.h5", "r", comm=ecomm) as afile:
-    mesh = afile.load_mesh("ksmesh")
-jtfilter.setup(nensemble, model,
-               mesh=mesh, subcommunicators=subcommunicators)
 
+jtfilter.setup(nensemble, model, mesh=mesh)
+comm = jtfilter.subcommunicators.comm
 # load the initial ensemble
 erank = ecomm.rank
 offset = np.concatenate((np.array([0]), np.cumsum(nensemble)))
-with fd.CheckpointFile("ks_ensemble.h5", "r", comm=ecomm) as afile:
+with fd.CheckpointFile("ks_ensemble.h5", "r", comm=comm) as afile:
     for i in range(nensemble[erank]):
         idx = i + offset[erank]
         u = jtfilter.ensemble[i][0]
         u0 = afile.load_function(mesh, "u", idx=i)
-        u.assign(u0)
+        u.interpolate(u0)
 
 def log_likelihood(y, Y):
     ll = (y-Y)**2/0.05**2/2*fd.dx
