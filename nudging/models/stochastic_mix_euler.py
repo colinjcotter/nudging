@@ -104,7 +104,7 @@ class Euler_mixSD(base_model):
 
         # SALT noise
         if self.salt:
-            psi_mod = psih + self.noise_scale*self.dU_3*Dt**0.5
+            psi_mod = psih + self.noise_scale*self.dW*Dt**0.5
         else:
             psi_mod = psih
 
@@ -123,7 +123,7 @@ class Euler_mixSD(base_model):
             + (fd.inner(fd.grad(self.psi1), fd.grad(phi)))*dx\
             + self.psi1*phi*dx + self.q1*phi*dx
         if not self.salt:
-            F += Dt*self.noise_scale*p*self.dU_3*Dt**0.5*dx
+            F += Dt*self.noise_scale*p*self.dW*Dt**0.5*dx
 
         # timestepping solver
         qphi_prob = fd.NonlinearVariationalProblem(F, self.qpsi1, bcs=bc)
@@ -135,8 +135,8 @@ class Euler_mixSD(base_model):
         self.X = self.allocate()
 
         # observations
-        x_point = np.linspace(0.0, self.Lx, self.n+1)
-        y_point = np.linspace(0.0, self.Ly, self.n+1)
+        x_point = np.linspace(0.0+(1/self.n), self.Lx-(1/self.n), int(self.n/2+1))
+        y_point = np.linspace(0.0+(1/self.n), self.Ly-(1/self.n), int(self.n/2+1))
         xv, yv = np.meshgrid(x_point, y_point)
         x_obs_list = np.vstack([xv.ravel(), yv.ravel()]).T.tolist()
         VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
