@@ -335,7 +335,7 @@ class jittertemp_filter(base_filter):
             Js.append(nudge_J)
             assert isinstance(nudge_J, OverloadedType)
         #  adding in the data as a parameter
-        for step in arange(nsteps):
+        for step in range(nsteps):
             self.Parameter_inputs[step].append(self.y)
             Parameters[step].append(fadj.Control(self.y))
 
