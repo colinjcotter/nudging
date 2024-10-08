@@ -79,7 +79,7 @@ class ensemble_petsc_interface:
             X_out.append(Xo)
         return X_out
 
-    def list2vec(self, X):
+    def list2vec(self, X, vec_out=None):
         """
         Transfer contents of list of same types as X to PETSc vec
         and return it.
@@ -101,10 +101,16 @@ class ensemble_petsc_interface:
         # get copy of self.w vec and return
         # we have to do it this way so we can copy from
         # local to global correctly.
-        vec = self.vec.duplicate()
+        if vec_out:
+            vec = vec_out
+        else:
+            vec = self.vec.duplicate()
         with self.w.dat.vec as fvec:
             fvec.copy(vec)
-        return vec
+        if vec_out:
+            return None
+        else:
+            return vec
 
 
 class ParameterisedEnsembleReducedFunctional:
@@ -161,7 +167,7 @@ class ensemble_tao_solver:
             X = interface.vec2list(x)
             J_val = Jhat(X)
             dJ = Jhat.derivative()
-            interface.list2vec(dJ).copy(g)
+            interface.list2vec(dJ, g)
             return J_val
 
         tao.setObjectiveGradient(objective_gradient, None)
