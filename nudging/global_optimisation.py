@@ -155,6 +155,7 @@ class ensemble_tao_solver:
         X = Jhat.controls
         interface = ensemble_petsc_interface(X, ensemble)
         tao = PETSc.TAO().create(comm=ensemble.global_comm)
+        self.ensemble = ensemble
 
         def objective_gradient(tao, x, g):
             X = interface.vec2list(x)
@@ -214,6 +215,8 @@ class ensemble_tao_solver:
 
         self.tao.solve()
         X = self.interface.vec2list(self.x)
-        return X
-
         logging.disable(log_level)
+        PETSc.garbage_cleanup(self.ensemble.ensemble_comm)
+        PETSc.garbage_cleanup(self.ensemble.comm)
+        PETSc.garbage_cleanup(self.ensemble.global_comm)
+        return X
