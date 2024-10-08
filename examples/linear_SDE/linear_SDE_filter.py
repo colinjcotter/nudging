@@ -1,24 +1,24 @@
 from firedrake import dx
 from nudging import LSDEModel, \
-    jittertemp_filter, base_diagnostic, Stage
+    jittertemp_filter, bootstrap_filter, base_diagnostic, Stage
 import numpy as np
-
-# model
-# multiply by A and add D
+# jtfilter = bootstrap_filter(verbose=2)
 T = 1.
-nsteps = 10
+nsteps = 5
 dt = T/nsteps
 A = 1.
 D = 1.0
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 2
-nranks = 32
+p_per_rank = 3
+nranks = 20
 nensemble = [p_per_rank]*nranks
 
 myfilter = jittertemp_filter(n_jitt=0, delta=0.15,
                              verbose=2, MALA=False,
                              visualise_tape=False, nudging=True, sigma=0.01)
+# myfilter = bootstrap_filter(verbose=2)
+
 myfilter.setup(nensemble=nensemble, model=model,
                residual=False)
 
@@ -44,26 +44,26 @@ def log_likelihood(y, Y):
     return ll
 
 
-# results in a diagnostic
-class samples(base_diagnostic):
-    def compute_diagnostic(self, particle):
-        model.u.assign(particle[0])
-        return model.obs().dat.data[0]
+# # results in a diagnostic
+# class samples(base_diagnostic):
+#     def compute_diagnostic(self, particle):
+#         model.u.assign(particle[0])
+#         return model.obs().dat.data[0]
 
 
-resamplingsamples = samples(Stage.AFTER_ASSIMILATION_STEP,
-                            myfilter.subcommunicators,
-                            nensemble)
-nudgingsamples = samples(Stage.AFTER_NUDGING,
-                         myfilter.subcommunicators,
-                         nensemble)
-nolambdasamples = samples(Stage.WITHOUT_LAMBDAS,
-                          myfilter.subcommunicators,
-                          nensemble)
+# resamplingsamples = samples(Stage.AFTER_ASSIMILATION_STEP,
+#                             myfilter.subcommunicators,
+#                             nensemble)
+# nudgingsamples = samples(Stage.AFTER_NUDGING,
+#                          myfilter.subcommunicators,
+#                          nensemble)
+# nolambdasamples = samples(Stage.WITHOUT_LAMBDAS,
+#                           myfilter.subcommunicators,
+#                           nensemble)
 
-diagnostics = [nudgingsamples,
-               resamplingsamples,
-               nolambdasamples]
+# diagnostics = [nudgingsamples,
+#                resamplingsamples,
+#                nolambdasamples]
 
 tao_params = {
     "tao_type": "lmvm",
@@ -74,27 +74,30 @@ tao_params = {
     "tao_gttol": 1.0e-5,
 }
 
+# bootstrap
+# myfilter.assimilation_step(y, log_likelihood, diagnostics=diagnostics)
 
+
+# nudging and tempering
 myfilter.assimilation_step(y, log_likelihood,
-                           diagnostics=diagnostics,
                            ess_tol=-666,
                            taylor_test=False,
                            tao_params=tao_params)
 
-if myfilter.subcommunicators.global_comm.rank == 0:
-    before, descriptors = nolambdasamples.get_archive()
-    after, descriptors = nudgingsamples.get_archive()
-    resampled, descriptors = resamplingsamples.get_archive()
+# if myfilter.subcommunicators.global_comm.rank == 0:
+#     before, descriptors = nolambdasamples.get_archive()
+#     after, descriptors = nudgingsamples.get_archive()
+#     resampled, descriptors = resamplingsamples.get_archive()
 
-    np.save("before", before)
-    np.save("after", after)
-    np.save("resampled", resampled)
-    bs_mean = np.mean(resampled)
-    bs_var = np.var(resampled)
+#     np.save("before", before)
+#     np.save("after", after)
+#     np.save("resampled", resampled)
+#     bs_mean = np.mean(resampled)
+#     bs_var = np.var(resampled)
 
-    sigsq = D**2/2/A*(1 - np.exp(-2*A*T))
-    Sigsq = sigsq + np.exp(-2*A*T)*d
-    tmean = (Sigsq*y0 + np.exp(-A*T)*S**2*c)/(Sigsq + S**2)
-    tvar = Sigsq*S**2/(Sigsq + S**2)
+#     sigsq = D**2/2/A*(1 - np.exp(-2*A*T))
+#     Sigsq = sigsq + np.exp(-2*A*T)*d
+#     tmean = (Sigsq*y0 + np.exp(-A*T)*S**2*c)/(Sigsq + S**2)
+#     tvar = Sigsq*S**2/(Sigsq + S**2)
 
-    print(tmean, bs_mean, tvar, bs_var)
+#     print(tmean, bs_mean, tvar, bs_var)

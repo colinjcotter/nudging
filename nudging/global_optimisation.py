@@ -112,6 +112,7 @@ class ParameterisedEnsembleReducedFunctional:
                  gather_functional):
         self.controls = Controls
         full_Controls = Controls + Parameters
+        self.ensemble = ensemble
         self.Parameters = []
         for i, parameter in enumerate(Parameters):
             self.Parameters.append(parameter.tape_value())
@@ -129,11 +130,16 @@ class ParameterisedEnsembleReducedFunctional:
     def __call__(self, inputs):
         full_inputs = inputs + self.Parameters
         val = self.rf(full_inputs)
+        PETSc.garbage_view(comm=self.ensemble.comm)
+        # PETSc.garbage_view(comm=self.ensemble.ensemble_comm)
         return val
+
 
     def derivative(self):
         der = self.rf.derivative()
         val = [der[i] for i in self.derivative_components]
+        PETSc.garbage_view(comm=self.ensemble.comm)
+        # PETSc.garbage_view(comm=self.ensemble.ensemble_comm)
         return val
 
 
@@ -149,7 +155,8 @@ class ensemble_tao_solver:
         X = Jhat.controls
         interface = ensemble_petsc_interface(X, ensemble)
         tao = PETSc.TAO().create(comm=ensemble.global_comm)
-
+        self.ensemble = ensemble
+        self.gcomm = ensemble.global_comm
         def objective_gradient(tao, x, g):
             X = interface.vec2list(x)
             J_val = Jhat(X)
@@ -207,7 +214,11 @@ class ensemble_tao_solver:
         logging.disable(logging.CRITICAL)
 
         self.tao.solve()
+        PETSc.garbage_view(comm=self.gcomm)
         X = self.interface.vec2list(self.x)
+        PETSc.garbage_cleanup(comm=self.gcomm)
+        PETSc.garbage_view(comm=self.gcomm)
+        PETSc.garbage_view(comm=self.ensemble.ensemble_comm)
         return X
 
         logging.disable(log_level)

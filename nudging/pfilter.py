@@ -2,6 +2,8 @@ from abc import ABCMeta, abstractmethod
 import firedrake as fd
 import logging
 import firedrake.adjoint as fadj
+# from memprof import memprof
+# from memory_profiler import profile
 from pyadjoint import exp as pexp
 from pyadjoint import log as plog
 from pyadjoint.adjfloat import max as pmax
@@ -396,6 +398,7 @@ class jittertemp_filter(base_filter):
                 rf, self.subcommunicators,
                 solver_parameters=self.tao_params)
             self.Jhat_solvers.append(solver)
+
 
     def assimilation_step(self, y, log_likelihood,
                           diagnostics=[],
