@@ -136,16 +136,12 @@ class ParameterisedEnsembleReducedFunctional:
     def __call__(self, inputs):
         full_inputs = inputs + self.Parameters
         val = self.rf(full_inputs)
-        PETSc.garbage_view(comm=self.ensemble.comm)
-        # PETSc.garbage_view(comm=self.ensemble.ensemble_comm)
         return val
 
 
     def derivative(self):
         der = self.rf.derivative()
         val = [der[i] for i in self.derivative_components]
-        PETSc.garbage_view(comm=self.ensemble.comm)
-        # PETSc.garbage_view(comm=self.ensemble.ensemble_comm)
         return val
 
 
@@ -220,11 +216,7 @@ class ensemble_tao_solver:
         logging.disable(logging.CRITICAL)
 
         self.tao.solve()
-        PETSc.garbage_view(comm=self.gcomm)
         X = self.interface.vec2list(self.x)
-        PETSc.garbage_cleanup(comm=self.gcomm)
-        PETSc.garbage_view(comm=self.gcomm)
-        PETSc.garbage_view(comm=self.ensemble.ensemble_comm)
         return X
 
         logging.disable(log_level)
