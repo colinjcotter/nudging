@@ -22,7 +22,7 @@ model = ndg.KS(nsteps, xpoints, seed=12353, lambdas=False,
                dt=dt, nu=nu, dc=dc, L=L)
 jtfilter = ndg.jittertemp_filter(n_jitt=4, delta=0.1, verbose=verbose)
 
-nensemble = [10]*20
+nensemble = [1]*20
 nspace = int(MPI.COMM_WORLD.size/len(nensemble))
 
 jtfilter.setup(nensemble, model)
