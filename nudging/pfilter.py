@@ -41,8 +41,8 @@ class base_filter(object, metaclass=ABCMeta):
     def __init__(self):
         pass
 
-    def setup(self, nensemble, model, mesh=None, resampler_seed=34343,
-              residual=False, subcommunicators=None):
+    def setup(self, nensemble, model, resampler_seed=34343,
+              residual=False):
         """
         Construct the ensemble
 
@@ -55,13 +55,9 @@ class base_filter(object, metaclass=ABCMeta):
         self.nspace = int(MPI.COMM_WORLD.size/n_ensemble_partitions)
         assert self.nspace*n_ensemble_partitions == MPI.COMM_WORLD.size
 
-        if subcommunicators:
-            self.subcommunicators = subcommunicators
-        else:
-            self.subcommunicators = fd.Ensemble(MPI.COMM_WORLD, self.nspace)
+        self.subcommunicators = fd.Ensemble(MPI.COMM_WORLD, self.nspace)
         # model needs to build the mesh in setup
-        self.model.setup(mesh=mesh, comm=self.subcommunicators.comm)
-
+        self.model.setup(self.subcommunicators.comm)
         if isinstance(nensemble, int):
             nensemble = tuple(nensemble for _ in
                               range(self.subcommunicators.comm.size))
@@ -250,12 +246,10 @@ class jittertemp_filter(base_filter):
                             + "computing the Metropolis correction for MALA."
                             + " Choose a small delta.")
 
-    def setup(self, nensemble, model, resampler_seed=34343, residual=False,
-              mesh=None, subcommunicators=None):
+    def setup(self, nensemble, model, resampler_seed=34343, residual=False):
         super(jittertemp_filter, self).setup(
             nensemble, model, resampler_seed=resampler_seed,
-            residual=residual, mesh=mesh,
-            subcommunicators=subcommunicators)
+            residual=residual)
         # Owned array for sending dtheta
         ecomm = self.subcommunicators.ensemble_comm
         self.dtheta_arr = OwnedArray(size=self.nglobal, dtype=float,
