@@ -37,6 +37,15 @@ class Euler_mixSD(base_model):
         # solver_parameters
         sp = {"ksp_type": "cg", "pc_type": "lu",
               "pc_factor_mat_solver_type": "mumps"}
+        #ksp_converged_reason":None, "snes_converged_reason":None
+        
+        sp_EX = {"ksp_type": "gmres",
+                 "pc_type": "fieldsplit",
+                 "pc_fieldsplit_type" : "additive",
+                 "fieldsplit_0_pc_type": "lu",
+                 "fieldsplit_0_pc_factor_mat_solver_type": "mumps",
+                 "fieldsplit_1_pc_type": "lu",
+                 "fieldsplit_1_pc_factor_mat_solver_type": "mumps"}
 
         # Setup noise term using Matern formula
         self.Vcg = fd.FunctionSpace(self.mesh, "CG", 1)  # Streamfunctions
@@ -129,7 +138,7 @@ class Euler_mixSD(base_model):
         qphi_prob = fd.NonlinearVariationalProblem(F, self.qpsi1, bcs=bc)
 
         self.qphi_solver = fd.NonlinearVariationalSolver(qphi_prob,
-                                                         solver_parameters=sp)
+                                                         solver_parameters=sp_EX)
 
         # internal state for controls
         self.X = self.allocate()

@@ -2,8 +2,6 @@ from abc import ABCMeta, abstractmethod
 import firedrake as fd
 import logging
 import firedrake.adjoint as fadj
-# from memprof import memprof
-# from memory_profiler import profile
 from pyadjoint import exp as pexp
 from pyadjoint import log as plog
 from pyadjoint.adjfloat import max as pmax
@@ -461,7 +459,23 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
             # nudging one step at a time
+            # self.rfs = []
+            # self.Jhat_solvers = []
+            # for step in range(nsteps):
+            #     self.rf = ParameterisedEnsembleReducedFunctional(
+            #     self.Js, self.Controls[step], self.Parameters[step],
+            #     self.subcommunicators,
+            #     gather_functional=self.BigJhat)
+            #     self.rfs.append(self.rf)
+            #     solver = ensemble_tao_solver(
+            #         self.rfs[step], self.subcommunicators,
+            #         solver_parameters=self.tao_params)
+            #     self.Jhat_solvers.append(solver)
             for step in range(nsteps):
+                # solver = ensemble_tao_solver(
+                # rf, self.subcommunicators,
+                # solver_parameters=self.tao_params)
+                # self.Jhat_solvers.append(solver)
                 for i in range(N):
                     # get the randomised noise for this step
                     self.model.randomize(
@@ -482,7 +496,10 @@ class jittertemp_filter(base_filter):
                 # place the optimal value of lambda into ensemble
                 for i in range(N):
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
-            PETSc.garbage_cleanup(PETSc.COMM_SELF)
+            #PETSc.garbage_cleanup(PETSc.COMM_SELF)
+            PETSc.garbage_cleanup(self.subcommunicators.comm)
+            PETSc.garbage_cleanup(self.subcommunicators.ensemble_comm)
+            PETSc.garbage_cleanup(self.subcommunicators.global_comm)
 
             compute_diagnostics(diagnostics,
                                 self.ensemble,
