@@ -1,7 +1,7 @@
 import firedrake as fd
 import nudging as ndg
 import numpy as np
-
+from nudging.models.stochastic_KS_CIP import KS_CIP
 # create some synthetic data/observation data at T_1 ---- T_Nobs
 # Pick initial conditon
 # run model, get obseravation
@@ -22,32 +22,32 @@ params["nu"] = nu
 dc = 0.01
 params["dc"] = dc
 
-model = ndg.KS(nsteps, xpoints, seed=12353, lambdas=False,
+model = KS_CIP(nsteps, xpoints, seed=12353, lambdas=False,
                dt=dt, nu=nu, dc=dc, L=L)
 model.setup()
 X_start = model.allocate()
 u = X_start[0]
 x, = fd.SpatialCoordinate(model.mesh)
 
-CG3 = fd.FunctionSpace(model.mesh, "CG", 3)
-u0 = model.rg.normal(CG3, 0., 1.)
+CG2 = fd.FunctionSpace(model.mesh, "CG", 3)
+u0 = model.rg.normal(CG2, 0., 1.)
 u0 -= fd.assemble(u0*fd.dx)/L
 u0 *= L**0.5/fd.norm(u0)
 u.project(u0)
 
 print("Finding an initial state.")
-for i in fd.ProgressBar("").iter(range(2000)):
+for i in fd.ProgressBar("").iter(range(200)):
     model.randomize(X_start)
     model.run(X_start, X_start)  # run method for every time step
 
 print("generating ensemble.")
 
-Nensemble = 200  # size of the ensemble
+Nensemble = 20  # size of the ensemble
 import math
 spread_steps = math.ceil(4./dt/nsteps)
 
-Hermite = fd.FunctionSpace(model.mesh, "Hermite", 3)
-uout = fd.Function(Hermite, name="u")
+#CG2 = fd.FunctionSpace(model.mesh, "CG", 2)
+uout = fd.Function(CG2, name="u")
 
 X = model.allocate()
 
@@ -65,7 +65,7 @@ with fd.CheckpointFile("ks_ensemble.h5", 'w') as afile:
             model.randomize(X)
             model.run(X, X)  # run method for every time step
 
-        uout.assign(X[0])
+        uout.interpolate(X[0])
         afile.save_function(uout, idx=i)
 
 print("Generating the observational data.")

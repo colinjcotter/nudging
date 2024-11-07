@@ -4,6 +4,7 @@ import numpy as np
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from firedrake.__future__ import interpolate
+from nudging.models.stochastic_KS_CIP import KS_CIP
 
 import pickle
 
@@ -18,12 +19,11 @@ nu = params["nu"]
 dc = params["dc"]
 
 verbose = True
-model = ndg.KS(nsteps, xpoints, seed=12353, lambdas=False,
+model = KS_CIP(nsteps, xpoints, seed=12353, lambdas=False,
                dt=dt, nu=nu, dc=dc, L=L)
 jtfilter = ndg.jittertemp_filter(n_jitt=4, delta=0.1, verbose=verbose)
 
-nensemble = [1]*20
-nspace = int(MPI.COMM_WORLD.size/len(nensemble))
+nensemble = [20]*1
 
 jtfilter.setup(nensemble, model)
 comm = jtfilter.subcommunicators.comm
@@ -37,7 +37,6 @@ with fd.CheckpointFile("ks_ensemble.h5", "r", comm=comm) as afile:
         idx = i + offset[erank]
         u = jtfilter.ensemble[i][0]
         u0 = afile.load_function(mesh, "u", idx=i)
-        u0 = fd.assemble(interpolate(u0, model.CG3))
         u.interpolate(u0)
 
 def log_likelihood(y, Y):
@@ -74,7 +73,7 @@ if fd.COMM_WORLD.rank == 0:
 # do assimiliation step
 for k in range(N_obs):
     PETSc.Sys.Print("Step", k)
-    yVOM.dat.data[:] = y[k, :]
+    yVOM.dat.data[:] = y[:,k]
 
     # make a copy so that we don't overwrite the initial condition
     # in the next step
