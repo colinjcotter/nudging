@@ -41,8 +41,12 @@ class KS_CIP(base_model):
         dt = 0.01
         dT = fd.Constant(dt)
 
-        self.DG0 = fd.FunctionSpace(self.mesh, "DG", 0)
-        self.dW = fd.Function(self.DG0)
+        # Setup noise term and lambdas
+        self.W_F = fd.FunctionSpace(self.mesh, "DG", 0)
+        self.dW = fd.Function(self.W_F)
+        self.Lambda = fd.Function(self.W_F)
+
+        # model coefficient 
         alpha = fd.Constant(1.0) # viscosity
         beta = fd.Constant(0.02923) # hyperviscosity
         gamma = fd.Constant(1.) # advection
@@ -83,11 +87,6 @@ class KS_CIP(base_model):
         self.KSSolver = fd.NonlinearVariationalSolver(KSProb,
                                                       solver_parameters=params)
 
-        #stuff for interpolation to VOM
-        # CG3 = fd.FunctionSpace(mesh, "CG", 3)
-        # self.CG3 = CG3
-        # self.uout = fd.Function(CG3)
-
         # state for controls
         self.X = self.allocate()
 
@@ -107,12 +106,18 @@ class KS_CIP(base_model):
         # copy initial condition into model variable
         self.un.assign(self.X[0])
         self.unp1.assign(self.un)
+
+        if self.lambdas:
+            self.Lambda.assign(0.)
         # do the timestepping
         for step in range(self.nsteps):
             # get noise variables and lambdas
             self.dW.assign(self.X[step+1])
             if self.lambdas:
-                self.dW += self.X[step+1+self.nsteps]*(self.dt)**0.5
+                self.Lambda.assign(self.Lambda + self.X[self.nsteps+step+1])
+                self.dW.assign(self.X[step+1] + self.dt**0.5*self.Lambda)
+            else:
+                self.dW.assign(self.X[step+1])
             # advance in time
             self.KSSolver.solve()
             # copy output to input
@@ -135,11 +140,11 @@ class KS_CIP(base_model):
     def allocate(self):
         particle = [fd.Function(self.V)]
         for i in range(self.nsteps):
-            dW = fd.Function(self.DG0)
+            dW = fd.Function(self.W_F)
             particle.append(dW)
         if self.lambdas:
             for i in range(self.nsteps):
-                dW = fd.Function(self.DG0)
+                dW = fd.Function(self.W_F)
                 particle.append(dW)
         return particle
 
@@ -149,7 +154,7 @@ class KS_CIP(base_model):
         for i in range(self.nsteps):
             count += 1
             X[count].assign(c1*X[count] + c2*rg.normal(
-                self.DG0, 0., 1.))
+                self.W_F, 0., 1.))
             if g:
                 X[count] += gscale*g[count]
 
