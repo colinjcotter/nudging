@@ -22,7 +22,7 @@ params["nu"] = nu
 dc = 0.01
 params["dc"] = dc
 
-model = KS_CIP(nsteps, xpoints, seed=12353, lambdas=False,
+model = KS_CIP(nsteps, xpoints, seed=12353, lambdas=True,
                dt=dt, nu=nu, dc=dc, L=L)
 model.setup()
 X_start = model.allocate()
