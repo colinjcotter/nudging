@@ -392,9 +392,13 @@ class jittertemp_filter(base_filter):
                 exit()
 
             self.rfs.append(rf)
-            solver = ensemble_tao_solver(
-                rf, self.subcommunicators,
-                solver_parameters=self.tao_params)
+            if isinstance(self.tao_params, dict):
+                params = self.tao_params
+            elif isinstance(self.tao_params, list):
+                params = self.tao_params[step]
+            
+            solver = ensemble_tao_solver(rf, self.subcommunicators,
+                                            solver_parameters=params)
             self.Jhat_solvers.append(solver)
 
     def assimilation_step(self, y, log_likelihood,
@@ -502,7 +506,7 @@ class jittertemp_filter(base_filter):
                 self.model.randomize(self.ensemble[i])
 
         theta = .0
-        temper_count = 0
+        self.temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta
 
@@ -532,7 +536,7 @@ class jittertemp_filter(base_filter):
                                 stage=Stage.AFTER_TEMPER_RESAMPLE,
                                 run=self.model.run,
                                 new_ensemble=self.new_ensemble)
-            temper_count += 1
+            self.temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
                 if self.verbose > 1:
@@ -614,7 +618,7 @@ class jittertemp_filter(base_filter):
                                 new_ensemble=self.new_ensemble)
 
         if self.verbose > 0:
-            PETSc.Sys.Print(str(temper_count)+" tempering steps")
+            PETSc.Sys.Print(str(self.temper_count)+" tempering steps")
             PETSc.Sys.Print("Advancing ensemble")
         for i in range(N):
             self.model.run(self.ensemble[i], self.ensemble[i])
