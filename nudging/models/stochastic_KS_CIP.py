@@ -38,8 +38,7 @@ class KS_CIP(base_model):
         
         v = fd.TestFunction(self.V)
         
-        dt = 0.01
-        dT = fd.Constant(dt)
+        dT = fd.Constant(self.dt)
 
         # Setup noise term and lambdas
         self.W_F = fd.FunctionSpace(self.mesh, "DG", 0)
@@ -47,7 +46,7 @@ class KS_CIP(base_model):
         self.Lambda = fd.Function(self.W_F)
 
         # model coefficient 
-        alpha = fd.Constant(1.0) # viscosity
+        alpha = fd.Constant(1.1) # viscosity
         beta = fd.Constant(0.02923) # hyperviscosity
         gamma = fd.Constant(1.) # advection
 
@@ -74,11 +73,16 @@ class KS_CIP(base_model):
             - (dT/area)**0.5*self.dc*self.dW*v*dx
             )
 
+        linear_snes_params = {
+                'lag_preconditioner': 5,
+                'lag_preconditioner_persists': None,
+                            }
         params = {
+            'snes': linear_snes_params,
             "snes_atol": 1.0e-50,
             "snes_rtol": 1.0e-6,
             "snes_stol": 1.0e-50,
-            "ksp_type":"preonly",
+            "ksp_type":"gmres",
             "pc_type":"lu"
         }
 
@@ -91,7 +95,7 @@ class KS_CIP(base_model):
         self.X = self.allocate()
 
         # vertex only mesh for observations
-        x_obs = np.linspace(0, self.L, num=self.xpoints, endpoint=False)
+        x_obs = np.linspace(1.0, self.L-1.0, num=self.xpoints, endpoint=False)
         x_obs_list = []
         for i in x_obs:
             x_obs_list.append([i])
@@ -112,7 +116,6 @@ class KS_CIP(base_model):
         # do the timestepping
         for step in range(self.nsteps):
             # get noise variables and lambdas
-            self.dW.assign(self.X[step+1])
             if self.lambdas:
                 self.Lambda.assign(self.Lambda + self.X[self.nsteps+step+1])
                 self.dW.assign(self.X[step+1] + self.dt**0.5*self.Lambda)
