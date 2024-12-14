@@ -45,7 +45,9 @@ class Euler_mixSD(base_model):
                  "fieldsplit_0_pc_type": "lu",
                  "fieldsplit_0_pc_factor_mat_solver_type": "mumps",
                  "fieldsplit_1_pc_type": "lu",
-                 "fieldsplit_1_pc_factor_mat_solver_type": "mumps"}
+                 "fieldsplit_1_pc_factor_mat_solver_type": "mumps",
+                 #"ksp_converged_reason": None,
+                 "snes_type":"ksponly"}
 
         # Setup noise term using Matern formula
         self.Vcg = fd.FunctionSpace(self.mesh, "CG", 1)  # Streamfunctions
@@ -144,8 +146,8 @@ class Euler_mixSD(base_model):
         self.X = self.allocate()
 
         # observations
-        x_point = np.linspace(0.0+(1/self.n), self.Lx-(1/self.n), int(self.n/2+1))
-        y_point = np.linspace(0.0+(1/self.n), self.Ly-(1/self.n), int(self.n/2+1))
+        x_point = np.linspace(0.0+(4/self.n), self.Lx-(4/self.n), int(self.n/4+1))
+        y_point = np.linspace(0.0+(4/self.n), self.Ly-(4/self.n), int(self.n/4+1))
         xv, yv = np.meshgrid(x_point, y_point)
         x_obs_list = np.vstack([xv.ravel(), yv.ravel()]).T.tolist()
         VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
@@ -229,8 +231,9 @@ class Euler_mixSD(base_model):
             self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
             lambda_step = self.Lambda
             dW_step = self.X[1 + step]
-            dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
-                                - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
+            dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx)
+            # dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
+            #                    - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
             if step == 0:
                 lfunc = dlfunc
             else:

@@ -335,7 +335,7 @@ class jittertemp_filter(base_filter):
             Js.append(nudge_J)
             assert isinstance(nudge_J, OverloadedType)
         #  adding in the data as a parameter
-        for step in range(nsteps):
+        for step in np.arange(nsteps):
             self.Parameter_inputs[step].append(self.y)
             Parameters[step].append(fadj.Control(self.y))
 
@@ -392,11 +392,14 @@ class jittertemp_filter(base_filter):
                 exit()
 
             self.rfs.append(rf)
-            solver = ensemble_tao_solver(
-                rf, self.subcommunicators,
-                solver_parameters=self.tao_params)
+            if isinstance(self.tao_params, dict):
+                params = self.tao_params
+            elif isinstance(self.tao_params, list):
+                params = self.tao_params[step]
+            
+            solver = ensemble_tao_solver(rf, self.subcommunicators,
+                                            solver_parameters=params)
             self.Jhat_solvers.append(solver)
-
 
     def assimilation_step(self, y, log_likelihood,
                           diagnostics=[],
@@ -459,23 +462,7 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
             # nudging one step at a time
-            # self.rfs = []
-            # self.Jhat_solvers = []
-            # for step in range(nsteps):
-            #     self.rf = ParameterisedEnsembleReducedFunctional(
-            #     self.Js, self.Controls[step], self.Parameters[step],
-            #     self.subcommunicators,
-            #     gather_functional=self.BigJhat)
-            #     self.rfs.append(self.rf)
-            #     solver = ensemble_tao_solver(
-            #         self.rfs[step], self.subcommunicators,
-            #         solver_parameters=self.tao_params)
-            #     self.Jhat_solvers.append(solver)
             for step in range(nsteps):
-                # solver = ensemble_tao_solver(
-                # rf, self.subcommunicators,
-                # solver_parameters=self.tao_params)
-                # self.Jhat_solvers.append(solver)
                 for i in range(N):
                     # get the randomised noise for this step
                     self.model.randomize(
@@ -496,10 +483,7 @@ class jittertemp_filter(base_filter):
                 # place the optimal value of lambda into ensemble
                 for i in range(N):
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
-            #PETSc.garbage_cleanup(PETSc.COMM_SELF)
-            PETSc.garbage_cleanup(self.subcommunicators.comm)
-            PETSc.garbage_cleanup(self.subcommunicators.ensemble_comm)
-            PETSc.garbage_cleanup(self.subcommunicators.global_comm)
+            PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
             compute_diagnostics(diagnostics,
                                 self.ensemble,
@@ -522,7 +506,7 @@ class jittertemp_filter(base_filter):
                 self.model.randomize(self.ensemble[i])
 
         theta = .0
-        temper_count = 0
+        self.temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta
 
@@ -552,7 +536,7 @@ class jittertemp_filter(base_filter):
                                 stage=Stage.AFTER_TEMPER_RESAMPLE,
                                 run=self.model.run,
                                 new_ensemble=self.new_ensemble)
-            temper_count += 1
+            self.temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
                 if self.verbose > 1:
@@ -634,7 +618,7 @@ class jittertemp_filter(base_filter):
                                 new_ensemble=self.new_ensemble)
 
         if self.verbose > 0:
-            PETSc.Sys.Print(str(temper_count)+" tempering steps")
+            PETSc.Sys.Print(str(self.temper_count)+" tempering steps")
             PETSc.Sys.Print("Advancing ensemble")
         for i in range(N):
             self.model.run(self.ensemble[i], self.ensemble[i])
