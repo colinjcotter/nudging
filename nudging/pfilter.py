@@ -332,7 +332,8 @@ class jittertemp_filter(base_filter):
             nudge_J = fd.assemble(log_likelihood(y, Y))
             nudge_J += self.model.lambda_functional()
             nudge_J_reg = self.model.lambda_functional(reg_scale=True)
-            Js.append((nudge_J, nudge_J_reg))
+            Js.append(nudge_J)
+            Js.append(nudge_J_reg)
             assert isinstance(nudge_J, OverloadedType)
         #  adding in the data as a parameter
         for step in np.arange(nsteps):
@@ -362,14 +363,17 @@ class jittertemp_filter(base_filter):
             BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
             for Jfloat in BigJ_reg_floats:
                 BigJ += Jfloat*self.sigma
-            BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
-            BigJ__reg_Controls = [fadj.Control(fl) for fl in  BigJ_reg_floats]
-            BigJhat = fadj.ReducedFunctional(BigJ, (BigJ_Controls,BigJ__reg_Controls))
+            BigJ_Controls = []
+            for i in range(len(BigJ_floats)):
+                BigJ_Controls.append(fadj.Control(BigJ_floats[i]))
+                BigJ_Controls.append(fadj.Control(BigJ_reg_floats[i]))
+                
+            BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
 
             assert len(Parameters[step]) == \
                 len(self.Parameter_inputs[step])
             rf = ParameterisedEnsembleReducedFunctional(
-                (Js[0], Js[1]), Controls[step], Parameters[step],
+                Js, Controls[step], Parameters[step],
                 self.subcommunicators,
                 gather_functional=BigJhat)
             for input0 in self.Control_inputs[step]:
