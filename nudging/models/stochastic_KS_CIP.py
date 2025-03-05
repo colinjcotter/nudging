@@ -161,7 +161,7 @@ class KS_CIP(base_model):
             if g:
                 X[count] += gscale*g[count]
 
-    def lambda_functional(self, reg_scale=False):
+    def lambda_functional(self):
         nsteps = self.nsteps
         dt = self.dt
         dx = fd.dx
@@ -176,11 +176,8 @@ class KS_CIP(base_model):
             lambda_step = self.Lambda
             dW_step = self.X[1 + step]
             #dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx)
-            if reg_scale:
-                dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx)
-            else:
-                dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
-                                     - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
+            dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
+                                - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
             if step == 0:
                 lfunc = dlfunc
             else:
