@@ -95,7 +95,7 @@ class KS_CIP(base_model):
         self.X = self.allocate()
 
         # vertex only mesh for observations
-        x_obs = np.linspace(1.0, self.L-1.0, num=self.xpoints, endpoint=False)
+        x_obs = np.linspace(0.0, self.L, num=self.xpoints, endpoint=False)
         x_obs_list = []
         for i in x_obs:
             x_obs_list.append([i])
@@ -175,6 +175,7 @@ class KS_CIP(base_model):
             self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
             lambda_step = self.Lambda
             dW_step = self.X[1 + step]
+            #dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx)
             dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
                                 - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
             if step == 0:

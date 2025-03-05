@@ -105,7 +105,6 @@ class base_filter(object, metaclass=ABCMeta):
         return rank
 
     def parallel_resample(self, dtheta=1, s=None):
-
         if s:
             s_copy = s
             self.s_copy = s
@@ -122,7 +121,6 @@ class base_filter(object, metaclass=ABCMeta):
                     PETSc.Sys.Print("ESS "
                                     + str(100*self.ess/np.sum(self.nensemble))
                                     + "%")
-
             # compute resampling protocol on rank 0
                 s = self.resampler.resample(weights, self.model)
                 for i in range(self.nglobal):
@@ -422,7 +420,6 @@ class jittertemp_filter(base_filter):
         N = self.nensemble[self.ensemble_rank]
         potentials = np.zeros(N)
         new_potentials = np.zeros(N)
-        self.ess_temper = []
         self.theta_temper = []
         nsteps = self.model.nsteps
 
