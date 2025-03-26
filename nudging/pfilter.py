@@ -81,6 +81,7 @@ class base_filter(object, metaclass=ABCMeta):
         ecomm = self.subcommunicators.ensemble_comm
         self.potential_arr = SharedArray(partition=self.nensemble, dtype=float,
                                          comm=ecomm)
+
         # Owned array for the resampling protocol
         self.s_arr = OwnedArray(size=self.nglobal, dtype=int,
                                 comm=ecomm,
@@ -252,6 +253,9 @@ class jittertemp_filter(base_filter):
         ecomm = self.subcommunicators.ensemble_comm
         self.dtheta_arr = OwnedArray(size=self.nglobal, dtype=float,
                                      comm=ecomm, owner=0)
+        # Shared array for minimum potential values
+        self.phi_min = SharedArray(partition=self.nensemble, dtype=float,
+                                         comm=ecomm)
 
     def adaptive_dtheta(self, dtheta, theta, ess_tol):
         self.potential_arr.synchronise(root=0)
@@ -469,6 +473,8 @@ class jittertemp_filter(base_filter):
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
+            # a shared array for phi_min values
+            
             # nudging one step at a time
             for step in range(nsteps):
                 for i in range(N):
@@ -489,8 +495,22 @@ class jittertemp_filter(base_filter):
                                              options={"disp": False})
                     else:
                         Xopt = fadj.minimize(self.Jhat[step])
+
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
+                    # store the optimal value
+                    self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y])
+                self.phi_min.synchronise(root=0)
+                if self.ensemble_rank == 0:
+                    phi_min = self.phi_min.data()
+                    phi_min_sorted = np.sort(phi_min)[::-1]
+                    for i in range(phi_min.size):
+                        new_phi_min = np.maximum(phi_min, phi_min_sorted[i])
+                        weights = np.exp(-dtheta*new_phi_min
+                                 - logsumexp(-dtheta*new_phi_min))
+                        weights /= np.sum(weights)
+                        ess = 1/np.sum(weights**2)
+                    
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
             compute_diagnostics(diagnostics,
