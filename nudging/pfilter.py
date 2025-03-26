@@ -427,26 +427,37 @@ class jittertemp_filter(base_filter):
         if not self.model_taped:
             self.model_taped = True
             continue_annotation()
-            if self.MALA:
-                if self.verbose > 0:
-                    PETSc.Sys.Print("taping forward model for MALA")
-                self.model.run(self.ensemble[0],
-                               self.new_ensemble[0])
-                # set the controls
-                if isinstance(y, fd.Function):
-                    m = self.model.controls() + [fadj.Control(y)]
-                else:
-                    m = self.model.controls()
-                # requires log_likelihood to return symbolic
-                Y = self.model.obs()
-                MALA_J = fd.assemble(log_likelihood(y, Y))
-                # functional for MALA
-                cpts = [j for j in range(1, nsteps+1)]
-                self.Jhat_dW = fadj.ReducedFunctional(
-                    MALA_J, m, derivative_components=cpts)
+            if self.verbose > 0:
+                PETSc.Sys.Print("taping forward model for MALA")
+            self.model.run(self.ensemble[0],
+                            self.new_ensemble[0])
+            # set the controls
+            if isinstance(y, fd.Function):
+                m = self.model.controls() + [fadj.Control(y)]
+            else:
+                m = self.model.controls()
+            # requires log_likelihood to return symbolic
+            Y = self.model.obs()
 
             if self.nudging:
-                self.tape_nudging(y, log_likelihood)
+                nudge_J = fd.assemble(log_likelihood(y, Y))
+                nudge_J += self.model.lambda_functional()
+                # set up the functionals
+                # functional for nudging
+                self.Jhat = []
+                for step in range(nsteps+1, nsteps*2+1):
+                    # 0 component is state
+                    # 1 .. step is noise
+                    # step + 1 .. 2*step is lambdas
+                    assert self.model.lambdas
+                    # we only update lambdas[step] on timestep step
+                    cpts = [step]
+
+                    fnl = fadj.ReducedFunctional(nudge_J,
+                                                 m,
+                                                 derivative_components=cpts)
+
+                    self.Jhat.append(fnl)
             pause_annotation()
 
         if self.nudging:
@@ -467,18 +478,18 @@ class jittertemp_filter(base_filter):
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(
                         self.new_ensemble[i][1+step])
-
-                # update with current noise and lambda values
-                self.rfs[step].update_parameters(self.Parameter_inputs[step])
-                self.rfs[step](self.Control_inputs[step])
-                # get the minimum over current lambda
-                if self.verbose > 1:
-                    PETSc.Sys.Print("Solving for Lambda step ", step)
-                PETSc.Sys.Print("solving")
-                Xopt = self.Jhat_solvers[step].solve()
-                assert isinstance(Xopt[0], fd.Function)
-                # place the optimal value of lambda into ensemble
-                for i in range(N):
+                    # update with current noise and lambda values
+                    self.Jhat[step](self.ensemble[i]+[y])
+                    # get the minimum over current lambda
+                    if self.verbose > 1:
+                        PETSc.Sys.Print("Solving for Lambda step ", step,
+                                        "local ensemble member ", i)
+                    if i == 0:
+                        Xopt = fadj.minimize(self.Jhat[step], # needs updating from new Tao solver stuff?
+                                             options={"disp": False})
+                    else:
+                        Xopt = fadj.minimize(self.Jhat[step])
+                    # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
