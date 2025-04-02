@@ -438,15 +438,16 @@ class jittertemp_filter(base_filter):
             self.model_taped = True
             continue_annotation()
             s = [fadj.AdjFloat(1.0) for step in range(nsteps)]
+            s_controls = [fadj.Control(si) for si in s]
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for MALA")
             self.model.run(self.ensemble[0],
                             self.new_ensemble[0], s=s)
             # set the controls
             if isinstance(y, fd.Function):
-                m = self.model.controls() + [fadj.Control(y)] + s
+                m = self.model.controls() + [fadj.Control(y)] + s_controls
             else:
-                m = self.model.controls() + s
+                m = self.model.controls() + s_controls
             # requires log_likelihood to return symbolic
             Y = self.model.obs()
 
