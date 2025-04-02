@@ -437,12 +437,12 @@ class jittertemp_filter(base_filter):
         if not self.model_taped:
             self.model_taped = True
             continue_annotation()
-            self.scale = [Function(self.model.R) for step in range(nsteps)]
+            self.scale = [fd.Function(self.model.R) for step in range(nsteps)]
             scale_controls = [fadj.Control(si) for si in self.scale]
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for MALA")
             self.model.run(self.ensemble[0],
-                            self.new_ensemble[0], s=s)
+                            self.new_ensemble[0], s=self.scale)
             # set the controls
             if isinstance(y, fd.Function):
                 m = self.model.controls() + [fadj.Control(y)] + scale_controls
