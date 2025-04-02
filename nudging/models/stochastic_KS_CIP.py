@@ -102,7 +102,7 @@ class KS_CIP(base_model):
         self.VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
         self.VVOM = fd.FunctionSpace(self.VOM, "DG", 0)
 
-    def run(self, X0, X1):
+    def run(self, X0, X1, s=1):
         # copy input into model variables for taping
         for i in range(len(X0)):
             self.X[i].assign(X0[i])
@@ -117,7 +117,7 @@ class KS_CIP(base_model):
         for step in range(self.nsteps):
             # get noise variables and lambdas
             if self.lambdas:
-                self.Lambda.assign(self.Lambda + self.X[self.nsteps+step+1])
+                self.Lambda.assign(self.Lambda + s*self.X[self.nsteps+step+1])
                 self.dW.assign(self.X[step+1] + self.dt**0.5*self.Lambda)
             else:
                 self.dW.assign(self.X[step+1])
