@@ -8,6 +8,7 @@ from pyadjoint.adjfloat import max as pmax
 from pyadjoint import OverloadedType
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
+from scipy.optimize import root_scalar
 from .resampling import residual_resampling
 from .diagnostics import compute_diagnostics, Stage, archive_diagnostics
 import numpy as np
@@ -434,16 +435,16 @@ class jittertemp_filter(base_filter):
         if not self.model_taped:
             self.model_taped = True
             continue_annotation()
-            s = fadj.AdjFloat(1.0)
+            s = [fadj.AdjFloat(1.0) for step in range(nsteps)]
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for MALA")
             self.model.run(self.ensemble[0],
                             self.new_ensemble[0], s=s)
             # set the controls
             if isinstance(y, fd.Function):
-                m = self.model.controls() + [fadj.Control(y), s]
+                m = self.model.controls() + [fadj.Control(y)] + s
             else:
-                m = self.model.controls() + [s]
+                m = self.model.controls() + s
             # requires log_likelihood to return symbolic
             Y = self.model.obs()
 
@@ -486,8 +487,7 @@ class jittertemp_filter(base_filter):
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
-            # a shared array for phi_min values
-            
+
             # nudging one step at a time
             for step in range(nsteps):
                 for i in range(N):
@@ -539,10 +539,19 @@ class jittertemp_filter(base_filter):
                     if phi_star <= self.phi_min.dlocal[i]:
                         # do nothing because we are at the minimum
                         continue
+
+
                     def func(s):
-                        DOESN'T WORK BECAUSE WE NEED TO HAVE A DIFFERENT s FOR EACH STEP
-                        return self.Jhat[step](self.ensemble[i]+[y, s])
-                        
+                        s0 = [1.]*nsteps
+                        s0[step] = s
+                        return self.Jhat[step](self.ensemble[i]+[y] + s0)
+
+
+                    sol = root_scalar(func, bracket=[0., 1.], x0=1.)
+                    
+                    lambda_step = self.ensemble[i][nsteps+step+1]
+                    lambda_step.assign(sol*lambda_step)
+
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
             compute_diagnostics(diagnostics,
