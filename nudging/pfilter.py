@@ -469,7 +469,8 @@ class jittertemp_filter(base_filter):
             # make the Tao solvers
             for fnl in self.Jhat:
                 problem = fadj.MinimizationProblem(fnl)
-                solver = fadj.TaoSolver(problem, self.tao_params)
+                solver = fadj.TaoSolver(problem, self.tao_params,
+                                        comm=self.subcommunicators.comm)
                 self.Jhat_solvers.append(solver)
 
         if self.nudging:
