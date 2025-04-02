@@ -441,9 +441,9 @@ class jittertemp_filter(base_filter):
                             self.new_ensemble[0], s=s)
             # set the controls
             if isinstance(y, fd.Function):
-                m = self.model.controls() + [fadj.Control(y)]
+                m = self.model.controls() + [fadj.Control(y), s]
             else:
-                m = self.model.controls()
+                m = self.model.controls() + [s]
             # requires log_likelihood to return symbolic
             Y = self.model.obs()
 
@@ -498,7 +498,7 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][1+step].assign(
                         self.new_ensemble[i][1+step])
                     # update with current noise and lambda values
-                    self.Jhat[step](self.ensemble[i]+[y])
+                    self.Jhat[step](self.ensemble[i]+[y, 1.0])
                     # get the minimum over current lambda
                     if self.verbose > 1:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
@@ -540,6 +540,8 @@ class jittertemp_filter(base_filter):
                         # do nothing because we are at the minimum
                         continue
                     def func(s):
+                        DOESN'T WORK BECAUSE WE NEED TO HAVE A DIFFERENT s FOR EACH STEP
+                        return self.Jhat[step](self.ensemble[i]+[y, s])
                         
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
