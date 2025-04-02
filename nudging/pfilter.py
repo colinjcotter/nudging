@@ -256,6 +256,9 @@ class jittertemp_filter(base_filter):
         # Shared array for minimum potential values
         self.phi_min = SharedArray(partition=self.nensemble, dtype=float,
                                          comm=ecomm)
+        # Owned array for sending chosen potential values phi star
+        self.phi_star = OwnedArray(size=self.nglobal, dtype=float,
+                                     comm=ecomm, owner=0)
 
     def adaptive_dtheta(self, dtheta, theta, ess_tol):
         self.potential_arr.synchronise(root=0)
@@ -431,10 +434,11 @@ class jittertemp_filter(base_filter):
         if not self.model_taped:
             self.model_taped = True
             continue_annotation()
+            s = fadj.AdjFloat(1.0)
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for MALA")
             self.model.run(self.ensemble[0],
-                            self.new_ensemble[0])
+                            self.new_ensemble[0], s=s)
             # set the controls
             if isinstance(y, fd.Function):
                 m = self.model.controls() + [fadj.Control(y)]
@@ -521,7 +525,22 @@ class jittertemp_filter(base_filter):
                                  - logsumexp(-dtheta*new_phi_min))
                         weights /= np.sum(weights)
                         ess = 1/np.sum(weights**2)
-                    
+                        if ess < ess_tol*self.nglobal:
+                            # take the last valid one
+                            new_phi_min = np.maximum(phi_min, phi_min_sorted[i-1])
+                            break
+                    for i in range(self.nglobal):
+                        self.phi_star[i] = new_phi_min[i]
+                self.phi_star.synchronise()
+
+                # Stage 3: find the scaling of lambda to achieve phi_star
+                for i in range(N):
+                    phi_star = self.phi_star.data()[i]
+                    if phi_star <= self.phi_min.dlocal[i]:
+                        # do nothing because we are at the minimum
+                        continue
+                    def func(s):
+                        
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
             compute_diagnostics(diagnostics,
