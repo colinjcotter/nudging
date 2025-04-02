@@ -507,10 +507,15 @@ class jittertemp_filter(base_filter):
                     # store the optimal value
                     self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y])
                 self.phi_min.synchronise(root=0)
+
+                # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
                 if self.ensemble_rank == 0:
                     phi_min = self.phi_min.data()
                     phi_min_sorted = np.sort(phi_min)[::-1]
+                    # loop over phis from max to min
                     for i in range(phi_min.size):
+                        # move all phi values down to ith largest phi
+                        # unless it is not possible by constraints
                         new_phi_min = np.maximum(phi_min, phi_min_sorted[i])
                         weights = np.exp(-dtheta*new_phi_min
                                  - logsumexp(-dtheta*new_phi_min))
