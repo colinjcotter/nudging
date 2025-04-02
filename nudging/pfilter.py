@@ -449,6 +449,7 @@ class jittertemp_filter(base_filter):
                 # set up the functionals
                 # functional for nudging
                 self.Jhat = []
+                self.Jhat_solvers = []
                 for step in range(nsteps+1, nsteps*2+1):
                     # 0 component is state
                     # 1 .. step is noise
@@ -463,6 +464,13 @@ class jittertemp_filter(base_filter):
 
                     self.Jhat.append(fnl)
             pause_annotation()
+
+        if self.nudging:
+            # make the Tao solvers
+            for fnl in self.Jhat:
+                problem = fadj.MinimizationProblem(fnl)
+                solver = fadj.TaoSolver(problem, self.tao_params)
+                self.Jhat_solvers.append(solver)
 
         if self.nudging:
             self.y.assign(y)
@@ -490,11 +498,8 @@ class jittertemp_filter(base_filter):
                     if self.verbose > 1:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
                                         "local ensemble member ", i)
-                    if i == 0:
-                        Xopt = fadj.minimize(self.Jhat[step], # needs updating from new Tao solver stuff?
-                                             options={"disp": False})
-                    else:
-                        Xopt = fadj.minimize(self.Jhat[step])
+                    
+                    Xopt = self.Jhat_solvers[step].solve()
 
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
