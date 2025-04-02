@@ -437,17 +437,17 @@ class jittertemp_filter(base_filter):
         if not self.model_taped:
             self.model_taped = True
             continue_annotation()
-            s = [fadj.AdjFloat(1.0) for step in range(nsteps)]
-            s_controls = [fadj.Control(si) for si in s]
+            self.scale = [Function(self.model.R) for step in range(nsteps)]
+            scale_controls = [fadj.Control(si) for si in self.scale]
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for MALA")
             self.model.run(self.ensemble[0],
                             self.new_ensemble[0], s=s)
             # set the controls
             if isinstance(y, fd.Function):
-                m = self.model.controls() + [fadj.Control(y)] + s_controls
+                m = self.model.controls() + [fadj.Control(y)] + scale_controls
             else:
-                m = self.model.controls() + s_controls
+                m = self.model.controls() + scale_controls
             # requires log_likelihood to return symbolic
             Y = self.model.obs()
 
@@ -500,7 +500,11 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][1+step].assign(
                         self.new_ensemble[i][1+step])
                     # update with current noise and lambda values
-                    self.Jhat[step](self.ensemble[i]+[y, 1.0])
+                    # (prepare the scale values first)
+                    for j in range(nsteps):
+                        if i != j:
+                            self.scale[j].assign(1.0)
+                    self.Jhat[step](self.ensemble[i]+[y]+self.scale)
                     # get the minimum over current lambda
                     if self.verbose > 1:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
@@ -511,7 +515,7 @@ class jittertemp_filter(base_filter):
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(Xopt[i])
                     # store the optimal value
-                    self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y])
+                    self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
                 self.phi_min.synchronise(root=0)
 
                 # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
@@ -544,15 +548,19 @@ class jittertemp_filter(base_filter):
 
 
                     def func(s):
-                        s0 = [1.]*nsteps
-                        s0[step] = s
-                        return self.Jhat[step](self.ensemble[i]+[y] + s0)
+                        self.scale[step].assign(s)
+                        val = self.Jhat[step](self.ensemble[i]+[y]
+                                               + self.scale)
+                        val -= phi_star
+                        return val
 
 
+                    # get the scale value
                     sol = root_scalar(func, bracket=[0., 1.], x0=1.)
-                    
+                    # reset self.scale to 1 for later use
+                    self.scale[step].assign(1.0)
                     lambda_step = self.ensemble[i][nsteps+step+1]
-                    lambda_step.assign(sol*lambda_step)
+                    lambda_step.interpolate(sol*lambda_step)
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
