@@ -2,6 +2,8 @@ from abc import ABCMeta, abstractmethod
 import firedrake as fd
 import logging
 import firedrake.adjoint as fadj
+from pyadjoint.optimization.optimization_problem import MinimizationProblem
+from pyadjoint.optimization.tao_solver import TAOSolver
 from pyadjoint import exp as pexp
 from pyadjoint import log as plog
 from pyadjoint.adjfloat import max as pmax
@@ -473,9 +475,8 @@ class jittertemp_filter(base_filter):
         if self.nudging:
             # make the Tao solvers
             for fnl in self.Jhat:
-                problem = fadj.MinimizationProblem(fnl)
-                solver = fadj.TaoSolver(problem, self.tao_params,
-                                        comm=self.subcommunicators.comm)
+                problem = MinimizationProblem(fnl)
+                solver = TAOSolver(problem, self.tao_params, comm=self.subcommunicators.comm)
                 self.Jhat_solvers.append(solver)
 
         if self.nudging:
