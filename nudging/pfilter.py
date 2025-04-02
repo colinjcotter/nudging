@@ -229,7 +229,7 @@ class bootstrap_filter(base_filter):
 class jittertemp_filter(base_filter):
     def __init__(self, n_jitt, delta,
                  verbose=0, MALA=False, nudging=False,
-                 visualise_tape=False, sigma=0.1):
+                 visualise_tape=False, sigma=0.1, tau=0.1):
         self.delta = delta
         self.verbose = verbose
         self.MALA = MALA
@@ -238,6 +238,7 @@ class jittertemp_filter(base_filter):
         self.visualise_tape = visualise_tape
         self.n_jitt = n_jitt
         self.sigma = sigma  # nudging parameter
+        self.tau = tau  # nudging parameter
 
         if MALA:
             PETSc.Sys.Print("Warning, we are not currently "
@@ -330,10 +331,11 @@ class jittertemp_filter(base_filter):
                            self.new_ensemble[i])
             Y = self.model.obs()
             nudge_J = fd.assemble(log_likelihood(y, Y))
-            nudge_J += self.model.lambda_functional()
-            nudge_J_reg = self.model.lambda_functional(reg_scale=True)
+            nudge_J += self.model.lambda_functional(reg_scale=True)
+            # nudge_J_reg = self.tau*fd.assemble(log_likelihood(y, Y))
+            # nudge_J_reg += self.model.lambda_functional(reg_scale=True)
             Js.append(nudge_J)
-            Js.append(nudge_J_reg)
+            # Js.append(nudge_J_reg)
             assert isinstance(nudge_J, OverloadedType)
         #  adding in the data as a parameter
         for step in np.arange(nsteps):
@@ -349,7 +351,7 @@ class jittertemp_filter(base_filter):
         # inputs to the RFs that map from the Js to the BigJ
         for i in range(np.sum(self.nensemble)):
             BigJ_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
-            BigJ_reg_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
+            #BigJ_reg_floats.append(fadj.AdjFloat(1.0))  # needs value > 0
 
         # reduced functionals for each step
         # they differ by the derivative components
@@ -361,12 +363,15 @@ class jittertemp_filter(base_filter):
             BigJ = -2*logsumexp_adjfloat(BigJ_floats,
                                          factor=-1.0)
             BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
-            for Jfloat in BigJ_reg_floats:
+            for Jfloat in BigJ_floats:
                 BigJ += Jfloat*self.sigma
+            # for Jfloat in BigJ_reg_floats:
+            #     BigJ += Jfloat*self.sigma
             BigJ_Controls = []
-            for i in range(len(BigJ_floats)):
-                BigJ_Controls.append(fadj.Control(BigJ_floats[i]))
-                BigJ_Controls.append(fadj.Control(BigJ_reg_floats[i]))
+            BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
+            # for i in range(len(BigJ_floats)):
+            #     BigJ_Controls.append(fadj.Control(BigJ_floats[i]))
+            #     BigJ_Controls.append(fadj.Control(BigJ_reg_floats[i]))
                 
             BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
 

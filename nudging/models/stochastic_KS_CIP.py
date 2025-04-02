@@ -178,6 +178,7 @@ class KS_CIP(base_model):
             #dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx)
             if reg_scale:
                 dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx)
+                #dlfunc += fd.assemble(fd.jump(lambda_step)**2*dt/2*fd.dS)
             else:
                 dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
                                      - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
