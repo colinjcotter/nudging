@@ -293,7 +293,6 @@ class jittertemp_filter(base_filter):
 
         if self.verbose > 0:
             PETSc.Sys.Print("taping forward model for nudging")
-        self.y = y
         Js = []  # list of lists of functionals
         Controls = [[] for i in range(nsteps)]  # things to pass to RF
         #  constructor
@@ -352,6 +351,8 @@ class jittertemp_filter(base_filter):
             tape = get_working_tape()
             assert isinstance(self.visualise_tape, str)
             tape.visualise_pdf(self.visualise_tape)
+        else:
+            PETSc.Sys.Print("not visualising")
 
         # inputs to the RFs that map from the Js to the BigJ
         for i in range(np.sum(self.nensemble)):
@@ -405,14 +406,15 @@ class jittertemp_filter(base_filter):
             elif isinstance(self.tao_params, list):
                 params = self.tao_params[step]
             
-            solver = ensemble_tao_solver(rf, self.subcommunicators,
-                                            solver_parameters=params)
+            solver = ensemble_tao_solver(rf, self.subcommunicators.comm,
+                                         solver_parameters=params)
             self.Jhat_solvers.append(solver)
 
     def assimilation_step(self, y, log_likelihood,
                           diagnostics=[],
                           ess_tol=0.8, tao_params=None,
                           taylor_test=False):
+        #self.y = y
         if not tao_params:
             self.tao_params = {
                 "tao_type": "lmvm",
@@ -437,7 +439,7 @@ class jittertemp_filter(base_filter):
         if not self.model_taped:
             self.model_taped = True
             continue_annotation()
-            self.scale = [fd.Function(self.model.R) for step in range(nsteps)]
+            self.scale = [fd.Function(self.model.R).assign(1.0) for step in range(nsteps)]
             scale_controls = [fadj.Control(si) for si in self.scale]
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for MALA")
@@ -450,6 +452,8 @@ class jittertemp_filter(base_filter):
                 m = self.model.controls() + scale_controls
             # requires log_likelihood to return symbolic
             Y = self.model.obs()
+
+            print("M size", len(m))
 
             if self.nudging:
                 nudge_J = fd.assemble(log_likelihood(y, Y))
@@ -471,17 +475,25 @@ class jittertemp_filter(base_filter):
                                                  derivative_components=cpts)
 
                     self.Jhat.append(fnl)
+            if self.visualise_tape:
+                PETSc.Sys.Print("visualising")
+                tape = get_working_tape()
+                assert isinstance(self.visualise_tape, str)
+                tape.visualise_pdf(self.visualise_tape)
+
             pause_annotation()
 
-        if self.nudging:
-            # make the Tao solvers
-            for fnl in self.Jhat:
-                problem = MinimizationProblem(fnl)
-                solver = TAOSolver(problem, self.tao_params, comm=self.subcommunicators.comm)
-                self.Jhat_solvers.append(solver)
+            if self.nudging:
+                # make the Tao solvers
+                for fnl in self.Jhat:
+                    # testing the derivative
+                    problem = MinimizationProblem(fnl)
+                    solver = TAOSolver(problem, self.tao_params,
+                                       comm=self.subcommunicators.comm)
+                    self.Jhat_solvers.append(solver)
 
         if self.nudging:
-            self.y.assign(y)
+            #Do the nudging
             if self.verbose > 0:
                 PETSc.Sys.Print("Starting nudging")
             for i in range(N):
@@ -502,18 +514,19 @@ class jittertemp_filter(base_filter):
                     # update with current noise and lambda values
                     # (prepare the scale values first)
                     for j in range(nsteps):
-                        if i != j:
-                            self.scale[j].assign(1.0)
+                        self.scale[j].assign(1.0)
                     self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    df = self.Jhat[step].derivative()
+
                     # get the minimum over current lambda
                     if self.verbose > 1:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
                                         "local ensemble member ", i)
-                    
-                    Xopt = self.Jhat_solvers[step].solve()
-
+                    #Xopt = self.Jhat_solvers[step].solve()
+                    Xopt = fadj.minimize(self.Jhat[step])
                     # place the optimal value of lambda into ensemble
-                    self.ensemble[i][nsteps+1+step].assign(Xopt[i])
+                    self.ensemble[i][nsteps+1+step].assign(
+                        Xopt[nsteps+1+step])
                     # store the optimal value
                     self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
                 self.phi_min.synchronise(root=0)

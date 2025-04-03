@@ -55,7 +55,7 @@ for i in fd.ProgressBar("").iter(range(200)):
 
 print("generating ensemble.")
 
-Nensemble = 90  # size of the ensemble
+Nensemble = 96  # size of the ensemble
 
 spread_steps = math.ceil(4./dt/nsteps)
 

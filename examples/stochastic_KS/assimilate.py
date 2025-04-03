@@ -20,15 +20,16 @@ nu = params["nu"]
 dc = params["dc"]
 #dc = 2.5
 
-nensemble = [3]*30
+nensemble = [6]*16
 
 model = KS_CIP(nsteps, xpoints, seed=12353, lambdas=True,
                dt=dt, nu=nu, dc=dc, L=L)
 
-nudging = False
+nudging = True
 jtfilter = ndg.jittertemp_filter(n_jitt=0, delta=0.15,
-                             verbose=2, MALA=False,
-                             visualise_tape=False, nudging=nudging, sigma=0.01)
+                                 verbose=2, MALA=False,
+                                 visualise_tape="ks.pdf",
+                                 nudging=nudging, sigma=0.01)
 # jtfilter = ndg.bootstrap_filter(verbose=2)
 
 
@@ -82,7 +83,8 @@ if fd.COMM_WORLD.rank == 0:
 # diagnostic
 diagnostics = []
 ### do simulation for  enesmble
-N_sim = 100
+print("Warning, change N_sim back to 100")
+N_sim = 1
 #PETSc.Sys.Print('simulation step')
 for k in range(N_sim):
     PETSc.Sys.Print("Simulation Step", k)

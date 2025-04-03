@@ -51,14 +51,14 @@ class KS_CIP(base_model):
         gamma = fd.Constant(1.) # advection
 
         eta = fd.Constant(5.) # penalty term
-        area = fd.CellVolume(self.mesh)
+        area = fd.Constant(self.L/self.n)
         dx = fd.dx
         dS = fd.dS
         avg = fd.avg
         jump = fd.jump
 
         def a(u, v):
-            h = avg(fd.CellVolume(self.mesh))/fd.FacetArea(self.mesh)
+            h = area
             eqn = v.dx(0).dx(0)*u.dx(0).dx(0)*dx # diffusion
             eqn += avg(u.dx(0).dx(0))*jump(v.dx(0))*dS # <avg(u_xx), jump(v_x)>
             eqn += avg(v.dx(0).dx(0))*jump(u.dx(0))*dS # <avg(v_xx), jump(u_x)>
@@ -167,7 +167,7 @@ class KS_CIP(base_model):
         nsteps = self.nsteps
         dt = self.dt
         dx = fd.dx
-        cv = fd.CellVolume(self.mesh)
+        cv = fd.Constant(self.L/self.n)
 
         self.Lambda.assign(0.)
         for step in range(nsteps):
