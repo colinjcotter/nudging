@@ -540,8 +540,8 @@ class jittertemp_filter(base_filter):
                         # move all phi values down to ith largest phi
                         # unless it is not possible by constraints
                         new_phi_min = np.maximum(phi_min, phi_min_sorted[i])
-                        weights = np.exp(-dtheta*new_phi_min
-                                 - logsumexp(-dtheta*new_phi_min))
+                        weights = np.exp(-new_phi_min
+                                 - logsumexp(-new_phi_min))
                         weights /= np.sum(weights)
                         ess = 1/np.sum(weights**2)
                         if ess < ess_tol*self.nglobal:
@@ -565,8 +565,10 @@ class jittertemp_filter(base_filter):
                         val = self.Jhat[step](self.ensemble[i]+[y]
                                                + self.scale)
                         val -= phi_star
+                        self.scale[step].assign(1.0)
                         return val
 
+                    print(func(0.), func(1.))
 
                     # get the scale value
                     sol = root_scalar(func, bracket=[0., 1.], x0=1.)
