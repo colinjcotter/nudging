@@ -259,6 +259,9 @@ class jittertemp_filter(base_filter):
         # Shared array for minimum potential values
         self.phi_min = SharedArray(partition=self.nensemble, dtype=float,
                                          comm=ecomm)
+        # Shared array for maximum potential values
+        self.phi_max = SharedArray(partition=self.nensemble, dtype=float,
+                                         comm=ecomm)
         # Owned array for sending chosen potential values phi star
         self.phi_star = OwnedArray(size=self.nglobal, dtype=float,
                                      comm=ecomm, owner=0)
@@ -497,10 +500,14 @@ class jittertemp_filter(base_filter):
             if self.verbose > 0:
                 PETSc.Sys.Print("Starting nudging")
             for i in range(N):
+                # copy the state into new_ensemble to get maximum phi values
+                self.new_ensemble[i].assign(self.ensemble[i])
                 # zero the noise and lambdas in preparation for nudging
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
+                    self.new_ensemble[i][step+1].assign(0.)
+                    self.new_ensemble[i][nsteps+step+1].assign(0.)
 
             # nudging one step at a time
             for step in range(nsteps):
@@ -509,8 +516,8 @@ class jittertemp_filter(base_filter):
                     self.model.randomize(
                         self.new_ensemble[i])  # not efficient!
                     # just copy in the current component
-                    self.ensemble[i][1+step].assign(
-                        self.new_ensemble[i][1+step])
+                    self.new_ensemble[i][1+step].assign(
+                        self.ensemble[i][1+step])
                     # update with current noise and lambda values
                     # (prepare the scale values first)
                     for j in range(nsteps):
@@ -529,24 +536,34 @@ class jittertemp_filter(base_filter):
                         Xopt[nsteps+1+step])
                     # store the optimal value
                     self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    # store the value with lambda zero
+                    self.phi_max.dlocal[i] = self.Jhat[step](self.new_ensemble[i]+[y]+self.scale)
+                    # copy the noise
                 self.phi_min.synchronise(root=0)
+                self.phi_max.synchronise(root=0)
 
                 # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
                 if self.ensemble_rank == 0:
                     phi_min = self.phi_min.data()
+                    phi_max = self.phi_max.data()
                     phi_min_sorted = np.sort(phi_min)[::-1]
                     # loop over phis from max to min
                     for i in range(phi_min.size):
                         # move all phi values down to ith largest phi
                         # unless it is not possible by constraints
-                        new_phi_min = np.maximum(phi_min, phi_min_sorted[i])
+                        new_phi_min = np.maximum(phi_min,
+                                                 np.minimum(phi_max,
+                                                     phi_min_sorted[i]))
                         weights = np.exp(-new_phi_min
                                  - logsumexp(-new_phi_min))
                         weights /= np.sum(weights)
                         ess = 1/np.sum(weights**2)
                         if ess < ess_tol*self.nglobal:
-                            # take the last valid one
-                            new_phi_min = np.maximum(phi_min, phi_min_sorted[i-1])
+                            if i > 0:
+                                # take the last valid one
+                                new_phi_min = np.maximum(phi_min,
+                                                         np.minimum(phi_max,
+                                                                    phi_min_sorted[i]))
                             break
                     for i in range(self.nglobal):
                         self.phi_star[i] = new_phi_min[i]
