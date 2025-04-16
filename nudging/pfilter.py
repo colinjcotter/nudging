@@ -500,14 +500,15 @@ class jittertemp_filter(base_filter):
             if self.verbose > 0:
                 PETSc.Sys.Print("Starting nudging")
             for i in range(N):
-                # copy the state into new_ensemble to get maximum phi values
-                self.new_ensemble[i].assign(self.ensemble[i])
+                # copy the state into proposal_ensemble to get maximum
+                # phi values (just using it as working memory)
+                self.proposal_ensemble[i].assign(self.ensemble[i])
                 # zero the noise and lambdas in preparation for nudging
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
-                    self.new_ensemble[i][step+1].assign(0.)
-                    self.new_ensemble[i][nsteps+step+1].assign(0.)
+                    self.proposal_ensemble[i][step+1].assign(0.)
+                    self.proposal_ensemble[i][nsteps+step+1].assign(0.)
 
             # nudging one step at a time
             for step in range(nsteps):
@@ -516,8 +517,11 @@ class jittertemp_filter(base_filter):
                     self.model.randomize(
                         self.new_ensemble[i])  # not efficient!
                     # just copy in the current component
-                    self.new_ensemble[i][1+step].assign(
-                        self.ensemble[i][1+step])
+                    self.ensemble[i][1+step].assign(
+                        self.new_ensemble[i][1+step])
+                    # copy into proposal_ensemble for max computation later
+                    self.proposal_ensemble[i][1+step].assign(
+                        self.new_ensemble[i][1+step])
                     # update with current noise and lambda values
                     # (prepare the scale values first)
                     for j in range(nsteps):
@@ -537,7 +541,7 @@ class jittertemp_filter(base_filter):
                     # store the optimal value
                     self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
                     # store the value with lambda zero
-                    self.phi_max.dlocal[i] = self.Jhat[step](self.new_ensemble[i]+[y]+self.scale)
+                    self.phi_max.dlocal[i] = self.Jhat[step](self.proposal_ensemble[i]+[y]+self.scale)
                     # copy the noise
                 self.phi_min.synchronise(root=0)
                 self.phi_max.synchronise(root=0)
@@ -564,6 +568,7 @@ class jittertemp_filter(base_filter):
                                 new_phi_min = np.maximum(phi_min,
                                                          np.minimum(phi_max,
                                                                     phi_min_sorted[i]))
+                            #otherwise we just have to use what we have
                             break
                     for i in range(self.nglobal):
                         self.phi_star[i] = new_phi_min[i]
