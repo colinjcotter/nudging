@@ -417,6 +417,7 @@ class jittertemp_filter(base_filter):
                           diagnostics=[],
                           ess_tol=0.8, tao_params=None,
                           taylor_test=False):
+        print(ess_tol, "ESS TOL")
         #self.y = y
         if not tao_params:
             self.tao_params = {
@@ -455,8 +456,6 @@ class jittertemp_filter(base_filter):
                 m = self.model.controls() + scale_controls
             # requires log_likelihood to return symbolic
             Y = self.model.obs()
-
-            print("M size", len(m))
 
             if self.nudging:
                 nudge_J = fd.assemble(log_likelihood(y, Y))
@@ -502,7 +501,7 @@ class jittertemp_filter(base_filter):
             for i in range(N):
                 # copy the state into proposal_ensemble to get maximum
                 # phi values (just using it as working memory)
-                self.proposal_ensemble[i].assign(self.ensemble[i])
+                self.proposal_ensemble[i][0].assign(self.ensemble[i][0])
                 # zero the noise and lambdas in preparation for nudging
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
@@ -558,10 +557,13 @@ class jittertemp_filter(base_filter):
                         new_phi_min = np.maximum(phi_min,
                                                  np.minimum(phi_max,
                                                      phi_min_sorted[i]))
+                        print(i, phi_min_sorted[i])
+                        print(np.stack((phi_min, new_phi_min, phi_max)).T)
                         weights = np.exp(-new_phi_min
                                  - logsumexp(-new_phi_min))
                         weights /= np.sum(weights)
                         ess = 1/np.sum(weights**2)
+                        print(ess, ess_tol*self.nglobal, self.nglobal)
                         if ess < ess_tol*self.nglobal:
                             if i > 0:
                                 # take the last valid one
@@ -570,6 +572,7 @@ class jittertemp_filter(base_filter):
                                                                     phi_min_sorted[i]))
                             #otherwise we just have to use what we have
                             break
+                    print(np.stack((phi_min, new_phi_min, phi_max)).T)
                     for i in range(self.nglobal):
                         self.phi_star[i] = new_phi_min[i]
                 self.phi_star.synchronise()
@@ -580,24 +583,28 @@ class jittertemp_filter(base_filter):
                     if phi_star <= self.phi_min.dlocal[i]:
                         # do nothing because we are at the minimum
                         continue
+                    else:
 
+                        def func(s):
+                            self.scale[step].assign(s)
+                            val = self.Jhat[step](self.ensemble[i]+[y]
+                                                  + self.scale)
+                            val -= phi_star
+                            self.scale[step].assign(1.0)
+                            return val
 
-                    def func(s):
-                        self.scale[step].assign(s)
-                        val = self.Jhat[step](self.ensemble[i]+[y]
-                                               + self.scale)
-                        val -= phi_star
+                        print(func(0.), func(1.))
+
+                        # get the scale value
+                        try:
+                            sol = root_scalar(func, bracket=[0., 1.], x0=1.)
+                        except ValueError:
+                            raise ValueError(str(func(0.))+" "+str(func(1.)))
+
+                        # reset self.scale to 1 for later use
                         self.scale[step].assign(1.0)
-                        return val
-
-                    print(func(0.), func(1.))
-
-                    # get the scale value
-                    sol = root_scalar(func, bracket=[0., 1.], x0=1.)
-                    # reset self.scale to 1 for later use
-                    self.scale[step].assign(1.0)
-                    lambda_step = self.ensemble[i][nsteps+step+1]
-                    lambda_step.interpolate(sol*lambda_step)
+                        lambda_step = self.ensemble[i][nsteps+step+1]
+                        lambda_step.interpolate(sol*lambda_step)
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 

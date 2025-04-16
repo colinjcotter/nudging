@@ -113,7 +113,7 @@ for k in range(N_obs):
     yVOM.dat.data[:] = y[k,:]
 
     # # # actually do the data assimilation step
-    jtfilter.assimilation_step(yVOM, log_likelihood,  ess_tol=-880.8,  diagnostics=diagnostics)
+    jtfilter.assimilation_step(yVOM, log_likelihood,  ess_tol=80,  diagnostics=diagnostics)
 
     for i in range(nensemble[jtfilter.ensemble_rank]):
         model.un.assign(jtfilter.ensemble[i][0])
