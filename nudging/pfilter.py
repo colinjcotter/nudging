@@ -414,7 +414,6 @@ class jittertemp_filter(base_filter):
                           diagnostics=[],
                           ess_tol=0.8, tao_params=None,
                           taylor_test=False):
-        print(ess_tol, "ESS TOL")
         #self.y = y
         if not tao_params:
             self.tao_params = {
@@ -583,8 +582,7 @@ class jittertemp_filter(base_filter):
                         while func(b) < 0:
                             b -= 1
                         # get the scale value
-                        sol = root_scalar(func, bracket=[b, 1.], x0=1.)
-                        print(sol)
+                        sol = root_scalar(func, bracket=[b, 1.], x0=1.).root
                         lambda_step = self.ensemble[i][nsteps+step+1]
                         lambda_step.interpolate(sol*lambda_step)
 
