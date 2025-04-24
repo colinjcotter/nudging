@@ -575,26 +575,16 @@ class jittertemp_filter(base_filter):
                             self.scale[step].assign(s)
                             val = self.Jhat[step](self.ensemble[i]+[y]
                                                   + self.scale)
-                            #val -= phi_star
+                            val = val - phi_star
                             self.scale[step].assign(1.0)
                             return val
 
+                        b = 0.
+                        while func(b) < 0:
+                            b -= 1
                         # get the scale value
-                        try:
-                            sol = root_scalar(func, bracket=[0., 1.], x0=1.)
-                        except ValueError:
-                            self.scale[step].assign(0)
-                            f0 = self.Jhat[step](self.ensemble[i]+[y]
-                                                  + self.scale)
-                            self.scale[step].assign(1)
-                            f1 = self.Jhat[step](self.ensemble[i]+[y]
-                                                  + self.scale)
-                            print(phi_min, phi_star,
-                                  f0, f1, "f values")
-                            raise ValueError(str(func(0.))+" "+str(func(1.)))
-
-                        # reset self.scale to 1 for later use
-                        self.scale[step].assign(1.0)
+                        sol = root_scalar(func, bracket=[b, 1.], x0=1.)
+                        print(sol)
                         lambda_step = self.ensemble[i][nsteps+step+1]
                         lambda_step.interpolate(sol*lambda_step)
 
