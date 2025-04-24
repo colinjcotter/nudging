@@ -259,9 +259,6 @@ class jittertemp_filter(base_filter):
         # Shared array for minimum potential values
         self.phi_min = SharedArray(partition=self.nensemble, dtype=float,
                                          comm=ecomm)
-        # Shared array for maximum potential values
-        self.phi_max = SharedArray(partition=self.nensemble, dtype=float,
-                                         comm=ecomm)
         # Owned array for sending chosen potential values phi star
         self.phi_star = OwnedArray(size=self.nglobal, dtype=float,
                                      comm=ecomm, owner=0)
@@ -518,9 +515,6 @@ class jittertemp_filter(base_filter):
                     # just copy in the current component
                     self.ensemble[i][1+step].assign(
                         self.new_ensemble[i][1+step])
-                    # copy into proposal_ensemble for max computation later
-                    self.proposal_ensemble[i][1+step].assign(
-                        self.new_ensemble[i][1+step])
                     # update with current noise and lambda values
                     # (prepare the scale values first)
                     for j in range(nsteps):
@@ -539,26 +533,19 @@ class jittertemp_filter(base_filter):
                         Xopt[nsteps+1+step])
                     # store the optimal value
                     self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
-                    # store the value with lambda zero
-                    self.phi_max.dlocal[i] = self.Jhat[step](self.proposal_ensemble[i]+[y]+self.scale)
                     # copy the noise
                 self.phi_min.synchronise(root=0)
-                self.phi_max.synchronise(root=0)
 
                 # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
                 if self.ensemble_rank == 0:
                     phi_min = self.phi_min.data()
-                    phi_max = self.phi_max.data()
                     phi_min_sorted = np.sort(phi_min)[::-1]
                     # loop over phis from max to min
                     for i in range(phi_min.size):
                         # move all phi values down to ith largest phi
                         # unless it is not possible by constraints
                         new_phi_min = np.maximum(phi_min,
-                                                 np.minimum(phi_max,
-                                                     phi_min_sorted[i]))
-                        print(i, phi_min_sorted[i])
-                        print(np.stack((phi_min, new_phi_min, phi_max)).T)
+                                                 phi_min_sorted[i])
                         weights = np.exp(-new_phi_min
                                  - logsumexp(-new_phi_min))
                         weights /= np.sum(weights)
@@ -568,11 +555,9 @@ class jittertemp_filter(base_filter):
                             if i > 0:
                                 # take the last valid one
                                 new_phi_min = np.maximum(phi_min,
-                                                         np.minimum(phi_max,
-                                                                    phi_min_sorted[i]))
+                                                         phi_min_sorted[i-1])
                             #otherwise we just have to use what we have
                             break
-                    print(np.stack((phi_min, new_phi_min, phi_max)).T)
                     for i in range(self.nglobal):
                         self.phi_star[i] = new_phi_min[i]
                 self.phi_star.synchronise()
@@ -580,6 +565,7 @@ class jittertemp_filter(base_filter):
                 # Stage 3: find the scaling of lambda to achieve phi_star
                 for i in range(N):
                     phi_star = self.phi_star.data()[i]
+                    phi_min = self.phi_min.dlocal[i]
                     if phi_star <= self.phi_min.dlocal[i]:
                         # do nothing because we are at the minimum
                         continue
@@ -593,12 +579,18 @@ class jittertemp_filter(base_filter):
                             self.scale[step].assign(1.0)
                             return val
 
-                        print(func(0.), func(1.))
-
                         # get the scale value
                         try:
                             sol = root_scalar(func, bracket=[0., 1.], x0=1.)
                         except ValueError:
+                            self.scale[step].assign(0)
+                            f0 = self.Jhat[step](self.ensemble[i]+[y]
+                                                  + self.scale)
+                            self.scale[step].assign(1)
+                            f1 = self.Jhat[step](self.ensemble[i]+[y]
+                                                  + self.scale)
+                            print(phi_min,
+                                  f0, f1)
                             raise ValueError(str(func(0.))+" "+str(func(1.)))
 
                         # reset self.scale to 1 for later use
