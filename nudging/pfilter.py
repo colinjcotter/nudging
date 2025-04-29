@@ -20,7 +20,7 @@ from firedrake.adjoint import pause_annotation, continue_annotation, \
 from .global_optimisation import ensemble_tao_solver, \
         ParameterisedEnsembleReducedFunctional
 
-
+Print = PETSc.Sys.Print
 def logsumexp(x):
     c = x.max()
     return c + np.log(np.sum(np.exp(x - c)))
@@ -442,7 +442,7 @@ class jittertemp_filter(base_filter):
             self.scale = [fd.Function(self.model.R).assign(1.0) for step in range(nsteps)]
             scale_controls = [fadj.Control(si) for si in self.scale]
             if self.verbose > 0:
-                PETSc.Sys.Print("taping forward model for MALA")
+                PETSc.Sys.Print("taping forward model for Nudging")
             self.model.run(self.ensemble[0],
                             self.new_ensemble[0], s=self.scale)
             # set the controls
@@ -549,7 +549,7 @@ class jittertemp_filter(base_filter):
                                  - logsumexp(-new_phi_min))
                         weights /= np.sum(weights)
                         ess = 1/np.sum(weights**2)
-                        print(ess, ess_tol*self.nglobal, self.nglobal)
+                        Print(ess, ess_tol*self.nglobal, self.nglobal)
                         if ess < ess_tol*self.nglobal:
                             if i > 0:
                                 # take the last valid one
@@ -560,16 +560,16 @@ class jittertemp_filter(base_filter):
                     for i in range(self.nglobal):
                         self.phi_star[i] = new_phi_min[i]
                 self.phi_star.synchronise()
-
                 # Stage 3: find the scaling of lambda to achieve phi_star
                 for i in range(N):
-                    phi_star = self.phi_star.data()[i]
+                    #  convert this i to global index then use index
+                    ig = self.offset_list[self.ensemble_rank]+i
+                    phi_star = self.phi_star.data()[ig]
                     phi_min = self.phi_min.dlocal[i]
                     if phi_star <= self.phi_min.dlocal[i]:
                         # do nothing because we are at the minimum
                         continue
                     else:
-
                         def func(s):
                             self.scale[step].assign(s)
                             val = self.Jhat[step](self.ensemble[i]+[y]
@@ -582,7 +582,8 @@ class jittertemp_filter(base_filter):
                         while func(b) < 0:
                             b -= 1
                         # get the scale value
-                        sol = root_scalar(func, bracket=[b, 1.], x0=1.).root
+                        sol = root_scalar(func, bracket=[b, b+1.],  method="brentq").root
+                        Print('s', sol)
                         lambda_step = self.ensemble[i][nsteps+step+1]
                         lambda_step.interpolate(sol*lambda_step)
 
