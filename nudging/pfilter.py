@@ -11,6 +11,8 @@ from pyadjoint import OverloadedType
 from firedrake.petsc import PETSc
 from pyop2.mpi import MPI
 from scipy.optimize import root_scalar
+from scipy.optimize import minimize, Bounds
+from scipy.sparse import csc_matrix
 from .resampling import residual_resampling
 from .diagnostics import compute_diagnostics, Stage, archive_diagnostics
 import numpy as np
@@ -258,6 +260,12 @@ class jittertemp_filter(base_filter):
                                      comm=ecomm, owner=0)
         # Shared array for minimum potential values
         self.phi_min = SharedArray(partition=self.nensemble, dtype=float,
+                                         comm=ecomm)
+         # Shared array for maximum potential values
+        self.phi_liklihood = SharedArray(partition=self.nensemble, dtype=float,
+                                         comm=ecomm)
+         # Shared array for optimize potential values
+        self.phi_opt = SharedArray(partition=self.nensemble, dtype=float,
                                          comm=ecomm)
         # Owned array for sending chosen potential values phi star
         self.phi_star = OwnedArray(size=self.nglobal, dtype=float,
@@ -532,60 +540,94 @@ class jittertemp_filter(base_filter):
                         Xopt[nsteps+1+step])
                     # store the optimal value
                     self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
-                    # copy the noise
-                self.phi_min.synchronise(root=0)
+                    #self.scale[step].assign(0.0)
+                    self.phi_liklihood.dlocal[i] = self.Jhat[step](self.proposal_ensemble[i]+[y]+self.scale)
+                    #self.scale[j].assign(1.0) # reset the scale values
+                self.phi_min.synchronise()
+                self.phi_liklihood.synchronise()
 
                 # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
                 if self.ensemble_rank == 0:
                     phi_min = self.phi_min.data()
-                    phi_min_sorted = np.sort(phi_min)[::-1]
-                    # loop over phis from max to min
-                    for i in range(phi_min.size):
-                        # move all phi values down to ith largest phi
-                        # unless it is not possible by constraints
-                        new_phi_min = np.maximum(phi_min,
-                                                 phi_min_sorted[i])
-                        weights = np.exp(-new_phi_min
-                                 - logsumexp(-new_phi_min))
+                    Print('phi_min', phi_min)
+                    #phi_min_sorted = np.sort(phi_min)[::-1]
+                    phi_liklihood = self.phi_liklihood.data()
+                    #Print('diff phi_liklihood', phi_liklihood-phi_min)
+
+                    Print('new ESS maxmizer')
+                    # Objective: minimize negative ESS
+                    def maximizeESS(phi):
+                        weights = np.exp(-phi - logsumexp(-phi))
                         weights /= np.sum(weights)
                         ess = 1/np.sum(weights**2)
-                        Print(ess, ess_tol*self.nglobal, self.nglobal)
-                        if ess < ess_tol*self.nglobal:
-                            if i > 0:
-                                # take the last valid one
-                                new_phi_min = np.maximum(phi_min,
-                                                         phi_min_sorted[i-1])
-                            #otherwise we just have to use what we have
-                            break
+                        return -ess + np.sum(phi)/100 # To maximize ESS
+
+                    # Define bounds
+                    
+                    lower_bounds = np.minimum(phi_min, phi_liklihood)
+                    upper_bounds = np.maximum(phi_min, phi_liklihood)
+
+                    bounds = Bounds(phi_min,  phi_liklihood)
+                    # Initial guess: midpoint
+                    def phi_init(delta):
+                        return delta*phi_min + (1-delta)*phi_liklihood
+                    #x0 = phi_min
+                    # Run the optimization
+                    result = minimize(
+                                maximizeESS,
+                                x0 = phi_init(0.5),
+                                method='L-BFGS-B',
+                                bounds=bounds,
+                                #hess=lambda x: csc_matrix((len(x), len(x))),  # zero Hessian
+                                #options={'verbose': 1, 'maxiter': 10000}
+                            )
+                    # Use optimized phi
+                    phi_opt = result.x
+                    Print("Optimized phi:", phi_opt)
+                    #Print("difference phi:", phi_opt - phi_min)
+                    #Print("difference phi lik:", phi_opt - phi_liklihood)
+                    Print("Maximum ESS achieved:", -result.fun+np.sum(phi_opt)/100 )
+
                     for i in range(self.nglobal):
-                        self.phi_star[i] = new_phi_min[i]
+                        self.phi_star[i] = phi_opt[i]
                 self.phi_star.synchronise()
+                Print('Step', step, "phi_star", self.phi_star.data())
+
+
                 # Stage 3: find the scaling of lambda to achieve phi_star
-                for i in range(N):
-                    #  convert this i to global index then use index
-                    ig = self.offset_list[self.ensemble_rank]+i
+                for i in range(self.nensemble[self.ensemble_rank]):
+                    ig = self.layout.transform_index(i, itype='l',
+                                                  rtype='g')
+                    Print('size', self.phi_star.data().size)
                     phi_star = self.phi_star.data()[ig]
-                    phi_min = self.phi_min.dlocal[i]
-                    if phi_star <= self.phi_min.dlocal[i]:
+                    print('Step', step, "phi_star", 'local',i, 'gloabl', ig, 'rank' , self.ensemble_rank,  phi_star)
+                    phi_min = self.phi_min.data()[ig]
+                    print('Step', step,'phi_min in stage 3', 'local',i, 'gloabl', ig, 'rank' , self.ensemble_rank, phi_min)
+                    if abs(phi_star - phi_min) < 1.0e-8:
                         # do nothing because we are at the minimum
-                        continue
+                        lambda_step = self.proposal_ensemble[i][nsteps+step+1]
+                        self.proposal_ensemble[i][nsteps+step+1].assign(lambda_step)
+                        # continue
+                    # elif phi_star < phi_min:
+                    #     raise ValueError('bad phi_star value')
                     else:
                         def func(s):
                             self.scale[step].assign(s)
-                            val = self.Jhat[step](self.ensemble[i]+[y]
-                                                  + self.scale)
+                            val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
                             val = val - phi_star
                             self.scale[step].assign(1.0)
                             return val
+                        Print(func(0.), func(1.))
 
                         b = 0.
-                        while func(b) < 0:
-                            b -= 1
+                        # while func(b) < 0:
+                        #     b -= 1
                         # get the scale value
-                        sol = root_scalar(func, bracket=[b, b+1.],  method="brentq").root
+                        sol = root_scalar(func, bracket=[b, b+1.],   method="brentq").root
                         Print('s', sol)
                         lambda_step = self.ensemble[i][nsteps+step+1]
                         lambda_step.interpolate(sol*lambda_step)
+                        self.proposal_ensemble[i][nsteps+step+1].assign(lambda_step)
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
@@ -609,7 +651,7 @@ class jittertemp_filter(base_filter):
                 # generate the initial noise variables
                 self.model.randomize(self.ensemble[i])
 
-        theta = .0
+        theta = 1.0
         self.temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta
