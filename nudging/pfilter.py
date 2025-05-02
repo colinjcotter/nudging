@@ -510,11 +510,10 @@ class jittertemp_filter(base_filter):
                 for step in range(nsteps):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
-                    self.proposal_ensemble[i][step+1].assign(0.)
-                    self.proposal_ensemble[i][nsteps+step+1].assign(0.)
 
             # nudging one step at a time
             for step in range(nsteps):
+                phi_min = []
                 for i in range(N):
                     # get the randomised noise for this step
                     self.model.randomize(
@@ -527,32 +526,28 @@ class jittertemp_filter(base_filter):
                     for j in range(nsteps):
                         self.scale[j].assign(1.0)
                     self.Jhat[step](self.ensemble[i]+[y]+self.scale)
-                    df = self.Jhat[step].derivative()
 
                     # get the minimum over current lambda
                     if self.verbose > 1:
                         PETSc.Sys.Print("Solving for Lambda step ", step,
                                         "local ensemble member ", i)
-                    #Xopt = self.Jhat_solvers[step].solve()
                     Xopt = fadj.minimize(self.Jhat[step])
                     # place the optimal value of lambda into ensemble
                     self.ensemble[i][nsteps+1+step].assign(
                         Xopt[nsteps+1+step])
                     # store the optimal value
-                    self.phi_min.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
-                    #self.scale[step].assign(0.0)
-                    self.phi_liklihood.dlocal[i] = self.Jhat[step](self.proposal_ensemble[i]+[y]+self.scale)
-                    #self.scale[j].assign(1.0) # reset the scale values
+                    phi_min_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale))
+                    phi_min.append(phi_min_i)
+                    self.phi_min.dlocal[i] = phi_min_i
+                    self.scale[step].assign(0.0)
+                    self.phi_liklihood.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    self.scale[step].assign(1.0) # reset the scale values
                 self.phi_min.synchronise()
                 self.phi_liklihood.synchronise()
 
                 # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
                 if self.ensemble_rank == 0:
-                    phi_min = self.phi_min.data()
-                    Print('phi_min', phi_min)
-                    #phi_min_sorted = np.sort(phi_min)[::-1]
                     phi_liklihood = self.phi_liklihood.data()
-                    #Print('diff phi_liklihood', phi_liklihood-phi_min)
 
                     Print('new ESS maxmizer')
                     # Objective: minimize negative ESS
@@ -563,9 +558,10 @@ class jittertemp_filter(base_filter):
                         return -ess + np.sum(phi)/100 # To maximize ESS
 
                     # Define bounds
-                    
-                    lower_bounds = np.minimum(phi_min, phi_liklihood)
-                    upper_bounds = np.maximum(phi_min, phi_liklihood)
+
+                    assert(np.all(phi_min <= phi_liklihood))
+                    lower_bounds = phi_min
+                    upper_bounds = phi_liklihood
 
                     bounds = Bounds(phi_min,  phi_liklihood)
                     # Initial guess: midpoint
@@ -601,11 +597,10 @@ class jittertemp_filter(base_filter):
                     Print('size', self.phi_star.data().size)
                     phi_star = self.phi_star.data()[ig]
                     print('Step', step, "phi_star", 'local',i, 'gloabl', ig, 'rank' , self.ensemble_rank,  phi_star)
-                    phi_min = self.phi_min.data()[ig]
-                    print('Step', step,'phi_min in stage 3', 'local',i, 'gloabl', ig, 'rank' , self.ensemble_rank, phi_min)
-                    if abs(phi_star - phi_min) < 1.0e-8:
+                    print('Step', step,'phi_min in stage 3', 'local',i, 'gloabl', ig, 'rank' , self.ensemble_rank, phi_min[i])
+                    if abs(phi_star - phi_min[i]) < 1.0e-8:
                         # do nothing because we are at the minimum
-                        lambda_step = self.proposal_ensemble[i][nsteps+step+1]
+                        lambda_step = self.ensemble[i][nsteps+step+1]
                         self.proposal_ensemble[i][nsteps+step+1].assign(lambda_step)
                         # continue
                     # elif phi_star < phi_min:
