@@ -612,11 +612,7 @@ class jittertemp_filter(base_filter):
                             self.scale[step].assign(1.0)
                             return val
 
-                        self.scale[step].assign(0.0)
-                        val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
-                        self.scale[step].assign(1.0)
-
-                        
+                        # some checks, these are not cheap so remove later
                         assert abs(func(1)-phi_min_loc[i] + phi_star) < 1.0e-6, \
                             f'func(1) != phi_min_loc[i] - phi_star, {func(1)}, {phi_min_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_min:{phi_min_loc[i]}, val: {val}'
                         assert abs(func(0)-phi_liklihood_loc[i] + phi_star) < 1.0e-8, \
@@ -627,9 +623,16 @@ class jittertemp_filter(base_filter):
                         #     b -= 1
                         # get the scale value
                         sol = root_scalar(func, bracket=[b, b+1.],   method="brentq").root
-
+                        assert abs(func(sol)) < 1.0e-8, \
+                            f'func(sol):{func(sol)}'
                         lambda_step = self.ensemble[i][nsteps+step+1]
                         lambda_step.interpolate(sol*lambda_step)
+
+                        self.scale[step].assign(1.0)
+                        val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+                        self.scale[step].assign(1.0)
+                        assert abs(val - phi_star < 1.0e-8), f'val:{val}, phi star:{phi_star}, step:{step}'
+
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
