@@ -57,7 +57,7 @@ for step in range(nsteps):
 model.run(X_start, X_out, s=scale)
 Y = model.obs()
 nudge_J = fd.assemble(log_likelihood(yVOM, Y))
-nudge_J += model.lambda_functional()
+nudge_J += model.lambda_functional(scale)
 m = model.controls() + [fadj.Control(yVOM)] + scale_controls
 fnl = fadj.ReducedFunctional(nudge_J, m)
 pause_annotation()
@@ -73,7 +73,7 @@ before = fnl(X_use + [yVOM] + scale)
 
 for step in range(nsteps):
     X_use[nsteps+1+step].assign(0*X_use[nsteps+1+step])
-    scale[step].assign(1.0)
+    #scale[step].assign(1.0)
 
 after = fnl(X_use + [yVOM] + scale)
 

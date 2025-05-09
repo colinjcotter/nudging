@@ -163,7 +163,7 @@ class KS_CIP(base_model):
             if g:
                 X[count] += gscale*g[count]
 
-    def lambda_functional(self):
+    def lambda_functional(self, s=None):
         nsteps = self.nsteps
         dt = self.dt
         dx = fd.dx
@@ -174,10 +174,12 @@ class KS_CIP(base_model):
             # X[0] is the model state
             # X[1], .., X[nsteps] are the dWs
             # X[nsteps+1], .., X[2*nsteps] are the lambdas
-            self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
+            if s:
+                self.Lambda.assign(self.Lambda + s[step]*self.X[nsteps + 1 + step])
+            else:
+                self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
             lambda_step = self.Lambda
             dW_step = self.X[1 + step]
-            #dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx)
             dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
                                 - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
             if step == 0:
