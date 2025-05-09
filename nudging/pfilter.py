@@ -513,7 +513,8 @@ class jittertemp_filter(base_filter):
 
             # nudging one step at a time
             for step in range(nsteps):
-                phi_min = []
+                phi_min_loc = []
+                phi_liklihood_loc = []
                 for i in range(N):
                     # get the randomised noise for this step
                     self.model.randomize(
@@ -536,11 +537,13 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][nsteps+1+step].assign(
                         Xopt[nsteps+1+step])
                     # store the optimal value
-                    phi_min_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale))
-                    phi_min.append(phi_min_i)
+                    phi_min_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    phi_min_loc.append(phi_min_i)
                     self.phi_min.dlocal[i] = phi_min_i
                     self.scale[step].assign(0.0)
-                    self.phi_liklihood.dlocal[i] = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    phi_liklihood_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    self.phi_liklihood.dlocal[i] = phi_liklihood_i
+                    phi_liklihood_loc.append(phi_liklihood_i)
                     self.scale[step].assign(1.0) # reset the scale values
                 self.phi_min.synchronise()
                 self.phi_liklihood.synchronise()
@@ -548,8 +551,8 @@ class jittertemp_filter(base_filter):
                 # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
                 if self.ensemble_rank == 0:
                     phi_liklihood = self.phi_liklihood.data()
+                    phi_min = self.phi_min.data()
 
-                    Print('new ESS maxmizer')
                     # Objective: minimize negative ESS
                     def maximizeESS(phi):
                         weights = np.exp(-phi - logsumexp(-phi))
@@ -559,7 +562,7 @@ class jittertemp_filter(base_filter):
 
                     # Define bounds
 
-                    assert(np.all(phi_min <= phi_liklihood))
+                    assert np.all(phi_min <= phi_liklihood)
                     lower_bounds = phi_min
                     upper_bounds = phi_liklihood
 
@@ -596,15 +599,14 @@ class jittertemp_filter(base_filter):
                                                   rtype='g')
                     Print('size', self.phi_star.data().size)
                     phi_star = self.phi_star.data()[ig]
-                    print('Step', step, "phi_star", 'local',i, 'gloabl', ig, 'rank' , self.ensemble_rank,  phi_star)
-                    print('Step', step,'phi_min in stage 3', 'local',i, 'gloabl', ig, 'rank' , self.ensemble_rank, phi_min[i])
-                    if abs(phi_star - phi_min[i]) < 1.0e-8:
+
+                    if abs(phi_star - phi_min_loc[i]) < 1.0e-8:
                         # do nothing because we are at the minimum
                         lambda_step = self.ensemble[i][nsteps+step+1]
-                        self.proposal_ensemble[i][nsteps+step+1].assign(lambda_step)
+
                         # continue
-                    # elif phi_star < phi_min:
-                    #     raise ValueError('bad phi_star value')
+                    elif phi_star < phi_min_loc[i]:
+                        raise ValueError('bad phi_star value')
                     else:
                         def func(s):
                             self.scale[step].assign(s)
@@ -612,17 +614,20 @@ class jittertemp_filter(base_filter):
                             val = val - phi_star
                             self.scale[step].assign(1.0)
                             return val
-                        Print(func(0.), func(1.))
+
+                        assert abs(func(0)-phi_min_loc[i]) < 1.0e-8, \
+                            "func(0) != phi_min_loc[i]"
+                        assert abs(func(1)-phi_liklihood_loc[i]) < 1.0e-8, \
+                            "func(1) != phi_liklihood_loc[i]"
 
                         b = 0.
                         # while func(b) < 0:
                         #     b -= 1
                         # get the scale value
                         sol = root_scalar(func, bracket=[b, b+1.],   method="brentq").root
-                        Print('s', sol)
+
                         lambda_step = self.ensemble[i][nsteps+step+1]
                         lambda_step.interpolate(sol*lambda_step)
-                        self.proposal_ensemble[i][nsteps+step+1].assign(lambda_step)
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
