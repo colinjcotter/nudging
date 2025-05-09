@@ -615,10 +615,10 @@ class jittertemp_filter(base_filter):
                             self.scale[step].assign(1.0)
                             return val
 
-                        assert abs(func(0)-phi_min_loc[i]) < 1.0e-8, \
-                            "func(0) != phi_min_loc[i]"
-                        assert abs(func(1)-phi_liklihood_loc[i]) < 1.0e-8, \
-                            "func(1) != phi_liklihood_loc[i]"
+                        assert abs(func(0)-phi_min_loc[i] + phi_star) < 1.0e-8, \
+                            "func(0) != phi_min_loc[i] - phi_star"
+                        assert abs(func(1)-phi_liklihood_loc[i]) + phi_star < 1.0e-8, \
+                            "func(1) != phi_liklihood_loc[i] - phi_star"
 
                         b = 0.
                         # while func(b) < 0:
