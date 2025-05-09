@@ -67,12 +67,12 @@ X_use[0].assign(X_start[0])
 
 for step in range(nsteps):
     X_use[nsteps+1+step].assign(0.5)
-    scale[step].assign((step+1)/nsteps)
+    scale[step].assign(0.) # (step+1)/nsteps)
 
 before = fnl(X_use + [yVOM] + scale)
 
 for step in range(nsteps):
-    X_use[nsteps+1+step].assign((step+1)/nsteps*X_use[nsteps+1+step])
+    X_use[nsteps+1+step].assign(0*X_use[nsteps+1+step])
     scale[step].assign(1.0)
 
 after = fnl(X_use + [yVOM] + scale)
