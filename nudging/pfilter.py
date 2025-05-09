@@ -260,9 +260,8 @@ class jittertemp_filter(base_filter):
                                      comm=ecomm, owner=0)
         # Shared array for minimum potential values
         self.phi_min = SharedArray(partition=self.nensemble, dtype=float,
-                                         comm=ecomm)
-         # Shared array for maximum potential values
-        self.phi_liklihood = SharedArray(partition=self.nensemble, dtype=float,
+                                         comm=ecomm) # Shared array for maximum potential values
+        self.phi_max = SharedArray(partition=self.nensemble, dtype=float,
                                          comm=ecomm)
          # Shared array for optimize potential values
         self.phi_opt = SharedArray(partition=self.nensemble, dtype=float,
@@ -447,8 +446,13 @@ class jittertemp_filter(base_filter):
         if not self.model_taped:
             self.model_taped = True
             continue_annotation()
-            self.scale = [fd.Function(self.model.R).assign(1.0) for step in range(nsteps)]
-            scale_controls = [fadj.Control(si) for si in self.scale]
+            self.scale = []
+            scale_controls = []
+            for step in range(nsteps):
+                s = fd.Function(self.model.R)
+                s.assign(1.0)
+                self.scale.append(s)
+                scale_controls.append(fadj.Control(s))
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for Nudging")
             self.model.run(self.ensemble[0],
@@ -514,7 +518,7 @@ class jittertemp_filter(base_filter):
             # nudging one step at a time
             for step in range(nsteps):
                 phi_min_loc = []
-                phi_liklihood_loc = []
+                phi_max_loc = []
                 for i in range(N):
                     # get the randomised noise for this step
                     self.model.randomize(
@@ -541,16 +545,16 @@ class jittertemp_filter(base_filter):
                     phi_min_loc.append(phi_min_i)
                     self.phi_min.dlocal[i] = phi_min_i
                     self.scale[step].assign(0.0)
-                    phi_liklihood_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
-                    self.phi_liklihood.dlocal[i] = phi_liklihood_i
-                    phi_liklihood_loc.append(phi_liklihood_i)
+                    phi_max_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    self.phi_max.dlocal[i] = phi_max_i
+                    phi_max_loc.append(phi_max_i)
                     self.scale[step].assign(1.0) # reset the scale values
                 self.phi_min.synchronise()
-                self.phi_liklihood.synchronise()
+                self.phi_max.synchronise()
 
                 # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
                 if self.ensemble_rank == 0:
-                    phi_liklihood = self.phi_liklihood.data()
+                    phi_max = self.phi_max.data()
                     phi_min = self.phi_min.data()
 
                     # Objective: minimize negative ESS
@@ -562,14 +566,14 @@ class jittertemp_filter(base_filter):
 
                     # Define bounds
 
-                    assert np.all(phi_min <= phi_liklihood), np.stack((phi_min, phi_liklihood, phi_min - phi_liklihood)).T
+                    assert np.all(phi_min <= phi_max), np.stack((phi_min, phi_max, phi_min - phi_max)).T
                     lower_bounds = phi_min
-                    upper_bounds = phi_liklihood
+                    upper_bounds = phi_max
 
-                    bounds = Bounds(phi_min,  phi_liklihood)
+                    bounds = Bounds(phi_min,  phi_max)
                     # Initial guess: midpoint
                     def phi_init(delta):
-                        return delta*phi_min + (1-delta)*phi_liklihood
+                        return delta*phi_min + (1-delta)*phi_max
                     #x0 = phi_min
                     # Run the optimization
                     result = minimize(
@@ -582,11 +586,11 @@ class jittertemp_filter(base_filter):
                             )
                     # Use optimized phi
                     phi_opt = result.x
-                    a = np.stack((np.arange(len(phi_min)), phi_min,phi_opt, phi_liklihood)).T
+                    a = np.stack((np.arange(len(phi_min)), phi_min,phi_opt, phi_max)).T
                     Print("Optimized phi")
                     Print(a)
                     #Print("difference phi:", phi_opt - phi_min)
-                    #Print("difference phi lik:", phi_opt - phi_liklihood)
+                    #Print("difference phi lik:", phi_opt - phi_max)
                     Print("Maximum ESS achieved:", -result.fun+np.sum(phi_opt)/100 )
 
                     for i in range(self.nglobal):
@@ -615,8 +619,8 @@ class jittertemp_filter(base_filter):
                         # some checks, these are not cheap so remove later
                         assert abs(func(1)-phi_min_loc[i] + phi_star) < 1.0e-6, \
                             f'func(1) != phi_min_loc[i] - phi_star, {func(1)}, {phi_min_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_min:{phi_min_loc[i]}, val: {val}'
-                        assert abs(func(0)-phi_liklihood_loc[i] + phi_star) < 1.0e-8, \
-                            f'func(0) != phi_liklihood_loc[i] - phi_star, {func(0)}, {phi_liklihood_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_liklihood:{phi_liklihood_loc[i]}, val: {val}'
+                        assert abs(func(0)-phi_max_loc[i] + phi_star) < 1.0e-8, \
+                            f'func(0) != phi_max_loc[i] - phi_star, {func(0)}, {phi_max_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_max:{phi_max_loc[i]}, val: {val}'
 
                         b = 0.
                         # while func(b) < 0:
@@ -625,13 +629,39 @@ class jittertemp_filter(base_filter):
                         sol = root_scalar(func, bracket=[b, b+1.],   method="brentq").root
                         assert abs(func(sol)) < 1.0e-8, \
                             f'func(sol):{func(sol)}'
+
+                        self.scale[step].assign(sol)
+                        valb4 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+                        self.scale[step].assign(-1.0)
+                        valb4_1 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+                        
                         lambda_step = self.ensemble[i][nsteps+step+1]
-                        lambda_step.interpolate(sol*lambda_step)
+                        prenorm = fd.norm(lambda_step)
+                        lambda_step.assign(0.5*lambda_step)
+
+                        self.scale[step].assign(1.0)
+                        val99 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+
+                        lambdab4_list = []
+                        for s in range(len(self.ensemble[i])):
+                            lambdab4_list.append(fd.norm(self.ensemble[i][s]))
+                        
+                        lambda_step.assign(sol*lambda_step)
 
                         self.scale[step].assign(1.0)
                         val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+                        self.scale[step].assign(0.0)
+                        val0 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
                         self.scale[step].assign(1.0)
-                        assert abs(val - phi_star < 1.0e-8), f'val:{val}, phi star:{phi_star}, step:{step}'
+
+                        lambda_list = []
+                        for s in range(len(self.ensemble[i])):
+                            lambda_list.append(fd.norm(self.ensemble[i][s]))
+
+                        for st in range(nsteps):
+                            self.ensemble[i][nsteps+1+st].assign(0.1*st)
+                            
+                        assert abs(val - phi_star < 1.0e-8), f'val:{val}, phi star:{phi_star}, step:{step}, sol:{sol}, val0:{val0}, valb4:{valb4}, valb4_1:{valb4_1}, phi_min: {phi_min_loc[i]}, phi_max: {phi_max_loc[i]}, lambda: {fd.norm(lambda_step)}, pre:{prenorm}, val99:{val99},\n {np.array(lambda_list)},\n {np.array(lambdab4_list)}'
 
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
