@@ -562,7 +562,7 @@ class jittertemp_filter(base_filter):
 
                     # Define bounds
 
-                    assert np.all(phi_min <= phi_liklihood)
+                    assert np.all(phi_min <= phi_liklihood), np.stack((phi_min, phi_liklihood, phi_min - phi_liklihood)).T
                     lower_bounds = phi_min
                     upper_bounds = phi_liklihood
 
@@ -582,7 +582,9 @@ class jittertemp_filter(base_filter):
                             )
                     # Use optimized phi
                     phi_opt = result.x
-                    Print("Optimized phi:", phi_opt)
+                    a = np.stack((np.arange(len(phi_min)), phi_min,phi_opt, phi_liklihood)).T
+                    Print("Optimized phi")
+                    Print(a)
                     #Print("difference phi:", phi_opt - phi_min)
                     #Print("difference phi lik:", phi_opt - phi_liklihood)
                     Print("Maximum ESS achieved:", -result.fun+np.sum(phi_opt)/100 )
@@ -590,21 +592,16 @@ class jittertemp_filter(base_filter):
                     for i in range(self.nglobal):
                         self.phi_star[i] = phi_opt[i]
                 self.phi_star.synchronise()
-                Print('Step', step, "phi_star", self.phi_star.data())
-
 
                 # Stage 3: find the scaling of lambda to achieve phi_star
                 for i in range(self.nensemble[self.ensemble_rank]):
                     ig = self.layout.transform_index(i, itype='l',
                                                   rtype='g')
-                    Print('size', self.phi_star.data().size)
                     phi_star = self.phi_star.data()[ig]
 
                     if abs(phi_star - phi_min_loc[i]) < 1.0e-8:
                         # do nothing because we are at the minimum
-                        lambda_step = self.ensemble[i][nsteps+step+1]
-
-                        # continue
+                        continue
                     elif phi_star < phi_min_loc[i]:
                         raise ValueError('bad phi_star value')
                     else:
@@ -615,10 +612,15 @@ class jittertemp_filter(base_filter):
                             self.scale[step].assign(1.0)
                             return val
 
-                        assert abs(func(0)-phi_min_loc[i] + phi_star) < 1.0e-8, \
-                            "func(0) != phi_min_loc[i] - phi_star"
-                        assert abs(func(1)-phi_liklihood_loc[i]) + phi_star < 1.0e-8, \
-                            "func(1) != phi_liklihood_loc[i] - phi_star"
+                        self.scale[step].assign(0.0)
+                        val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+                        self.scale[step].assign(1.0)
+
+                        
+                        assert abs(func(1)-phi_min_loc[i] + phi_star) < 1.0e-6, \
+                            f'func(1) != phi_min_loc[i] - phi_star, {func(1)}, {phi_min_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_min:{phi_min_loc[i]}, val: {val}'
+                        assert abs(func(0)-phi_liklihood_loc[i] + phi_star) < 1.0e-8, \
+                            f'func(0) != phi_liklihood_loc[i] - phi_star, {func(0)}, {phi_liklihood_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_liklihood:{phi_liklihood_loc[i]}, val: {val}'
 
                         b = 0.
                         # while func(b) < 0:
