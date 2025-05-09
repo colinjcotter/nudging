@@ -467,7 +467,7 @@ class jittertemp_filter(base_filter):
 
             if self.nudging:
                 nudge_J = fd.assemble(log_likelihood(y, Y))
-                nudge_J += self.model.lambda_functional()
+                nudge_J += self.model.lambda_functional(self.scale)
                 # set up the functionals
                 # functional for nudging
                 self.Jhat = []
@@ -576,6 +576,9 @@ class jittertemp_filter(base_filter):
                         return delta*phi_min + (1-delta)*phi_max
                     #x0 = phi_min
                     # Run the optimization
+                    if self.verbose > 1:
+                        Print("Minimising global functional")
+
                     result = minimize(
                                 maximizeESS,
                                 x0 = phi_init(0.5),
@@ -587,17 +590,23 @@ class jittertemp_filter(base_filter):
                     # Use optimized phi
                     phi_opt = result.x
                     a = np.stack((np.arange(len(phi_min)), phi_min,phi_opt, phi_max)).T
-                    Print("Optimized phi")
-                    Print(a)
-                    #Print("difference phi:", phi_opt - phi_min)
-                    #Print("difference phi lik:", phi_opt - phi_max)
-                    Print("Maximum ESS achieved:", -result.fun+np.sum(phi_opt)/100 )
+                    if self.verbose > 2:
+                        Print("Optimized phi")
+                        Print(a)
+                    if self.verbose > 1:
+                        weights = np.exp(-phi_opt - logsumexp(-phi_opt))
+                        weights /= np.sum(weights)
+                        ess = 1/np.sum(weights**2)
+
+                        Print("Maximum ESS achieved:", ess)
 
                     for i in range(self.nglobal):
                         self.phi_star[i] = phi_opt[i]
                 self.phi_star.synchronise()
 
                 # Stage 3: find the scaling of lambda to achieve phi_star
+                if self.verbose > 1:
+                    Print("Rescaling lambda to optimal value")
                 for i in range(self.nensemble[self.ensemble_rank]):
                     ig = self.layout.transform_index(i, itype='l',
                                                   rtype='g')
@@ -630,38 +639,13 @@ class jittertemp_filter(base_filter):
                         assert abs(func(sol)) < 1.0e-8, \
                             f'func(sol):{func(sol)}'
 
-                        self.scale[step].assign(sol)
-                        valb4 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
-                        self.scale[step].assign(-1.0)
-                        valb4_1 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
-                        
                         lambda_step = self.ensemble[i][nsteps+step+1]
-                        prenorm = fd.norm(lambda_step)
-                        lambda_step.assign(0.5*lambda_step)
-
-                        self.scale[step].assign(1.0)
-                        val99 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
-
-                        lambdab4_list = []
-                        for s in range(len(self.ensemble[i])):
-                            lambdab4_list.append(fd.norm(self.ensemble[i][s]))
-                        
                         lambda_step.assign(sol*lambda_step)
 
                         self.scale[step].assign(1.0)
                         val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
-                        self.scale[step].assign(0.0)
-                        val0 = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
-                        self.scale[step].assign(1.0)
 
-                        lambda_list = []
-                        for s in range(len(self.ensemble[i])):
-                            lambda_list.append(fd.norm(self.ensemble[i][s]))
-
-                        for st in range(nsteps):
-                            self.ensemble[i][nsteps+1+st].assign(0.1*st)
-                            
-                        assert abs(val - phi_star < 1.0e-8), f'val:{val}, phi star:{phi_star}, step:{step}, sol:{sol}, val0:{val0}, valb4:{valb4}, valb4_1:{valb4_1}, phi_min: {phi_min_loc[i]}, phi_max: {phi_max_loc[i]}, lambda: {fd.norm(lambda_step)}, pre:{prenorm}, val99:{val99},\n {np.array(lambda_list)},\n {np.array(lambdab4_list)}'
+                        assert abs(val - phi_star < 1.0e-8) , f'val:{val}, phi star:{phi_star}, step:{step}, sol:{sol}'
 
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
