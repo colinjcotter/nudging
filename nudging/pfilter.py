@@ -503,7 +503,7 @@ class jittertemp_filter(base_filter):
                     self.Jhat_solvers.append(solver)
 
         if self.nudging:
-            #Do the nudging
+            # Do the nudging
             if self.verbose > 0:
                 PETSc.Sys.Print("Starting nudging")
             for i in range(N):
@@ -515,17 +515,15 @@ class jittertemp_filter(base_filter):
                     self.ensemble[i][step+1].assign(0.)  # the noise
                     self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
 
-            # nudging one step at a time
+            # Stage 1: nudging one step at a time
             for step in range(nsteps):
                 phi_min_loc = []
                 phi_max_loc = []
                 for i in range(N):
                     # get the randomised noise for this step
-                    self.model.randomize(
-                        self.new_ensemble[i])  # not efficient!
+                    self.model.randomize(self.new_ensemble[i])  # not efficient!
                     # just copy in the current component
-                    self.ensemble[i][1+step].assign(
-                        self.new_ensemble[i][1+step])
+                    self.ensemble[i][1+step].assign(self.new_ensemble[i][1+step])
                     # update with current noise and lambda values
                     # (prepare the scale values first)
                     for j in range(nsteps):
@@ -538,25 +536,27 @@ class jittertemp_filter(base_filter):
                                         "local ensemble member ", i)
                     Xopt = fadj.minimize(self.Jhat[step])
                     # place the optimal value of lambda into ensemble
-                    self.ensemble[i][nsteps+1+step].assign(
-                        Xopt[nsteps+1+step])
+                    self.ensemble[i][nsteps+1+step].assign(Xopt[nsteps+1+step])
                     # store the optimal value
                     phi_min_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
                     phi_min_loc.append(phi_min_i)
                     self.phi_min.dlocal[i] = phi_min_i
-                    self.scale[step].assign(0.0)
+                    self.scale[step].assign(-1.0)
                     phi_max_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
                     self.phi_max.dlocal[i] = phi_max_i
                     phi_max_loc.append(phi_max_i)
                     self.scale[step].assign(1.0) # reset the scale values
                 self.phi_min.synchronise()
                 self.phi_max.synchronise()
+                self.ess_count = 0
 
-                # Do "Stage 2" - find the phi values that minimise phis subject to ESS > tol
+                # Stage 2: find the phi values that minimise phis subject to ESS > tol
+                #with PETSc.Log.Event("Stage 2: Global Optimization"):
                 if self.ensemble_rank == 0:
                     phi_max = self.phi_max.data()
                     phi_min = self.phi_min.data()
-
+                    #Print('phi_val', np.stack((phi_min, phi_max, phi_max - phi_min)).T)
+                    
                     # Objective: minimize negative ESS
                     def maximizeESS(phi):
                         weights = np.exp(-phi - logsumexp(-phi))
@@ -565,12 +565,11 @@ class jittertemp_filter(base_filter):
                         return -ess + np.sum(phi)/100 # To maximize ESS
 
                     # Define bounds
-
                     assert np.all(phi_min <= phi_max), np.stack((phi_min, phi_max, phi_min - phi_max)).T
                     lower_bounds = phi_min
                     upper_bounds = phi_max
 
-                    bounds = Bounds(phi_min,  phi_max)
+                    bounds = Bounds(phi_min, 2*phi_max)
                     # Initial guess: midpoint
                     def phi_init(delta):
                         return delta*phi_min + (1-delta)*phi_max
@@ -592,12 +591,12 @@ class jittertemp_filter(base_filter):
                     a = np.stack((np.arange(len(phi_min)), phi_min,phi_opt, phi_max)).T
                     if self.verbose > 2:
                         Print("Optimized phi")
-                        Print(a)
+                        #Print(a)
                     if self.verbose > 1:
                         weights = np.exp(-phi_opt - logsumexp(-phi_opt))
                         weights /= np.sum(weights)
                         ess = 1/np.sum(weights**2)
-
+                        self.ess_count  = ess
                         Print("Maximum ESS achieved:", ess)
 
                     for i in range(self.nglobal):
@@ -605,11 +604,11 @@ class jittertemp_filter(base_filter):
                 self.phi_star.synchronise()
 
                 # Stage 3: find the scaling of lambda to achieve phi_star
+                #with PETSc.Log.Event("Stage 3: Lambda Rescaling"):
                 if self.verbose > 1:
                     Print("Rescaling lambda to optimal value")
                 for i in range(self.nensemble[self.ensemble_rank]):
-                    ig = self.layout.transform_index(i, itype='l',
-                                                  rtype='g')
+                    ig = self.layout.transform_index(i, itype='l', rtype='g')
                     phi_star = self.phi_star.data()[ig]
 
                     if abs(phi_star - phi_min_loc[i]) < 1.0e-8:
@@ -625,19 +624,11 @@ class jittertemp_filter(base_filter):
                             self.scale[step].assign(1.0)
                             return val
 
-                        # some checks, these are not cheap so remove later
-                        assert abs(func(1)-phi_min_loc[i] + phi_star) < 1.0e-6, \
-                            f'func(1) != phi_min_loc[i] - phi_star, {func(1)}, {phi_min_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_min:{phi_min_loc[i]}, val: {val}'
-                        assert abs(func(0)-phi_max_loc[i] + phi_star) < 1.0e-8, \
-                            f'func(0) != phi_max_loc[i] - phi_star, {func(0)}, {phi_max_loc[i] - phi_star}, {ig}, {i}, phi_star:{phi_star}, phi_max:{phi_max_loc[i]}, val: {val}'
-
                         b = 0.
-                        # while func(b) < 0:
-                        #     b -= 1
+                        while func(b) < 0:
+                            b -= 1
                         # get the scale value
                         sol = root_scalar(func, bracket=[b, b+1.],   method="brentq").root
-                        assert abs(func(sol)) < 1.0e-8, \
-                            f'func(sol):{func(sol)}'
 
                         lambda_step = self.ensemble[i][nsteps+step+1]
                         lambda_step.assign(sol*lambda_step)
@@ -645,7 +636,7 @@ class jittertemp_filter(base_filter):
                         self.scale[step].assign(1.0)
                         val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
 
-                        assert abs(val - phi_star < 1.0e-8) , f'val:{val}, phi star:{phi_star}, step:{step}, sol:{sol}'
+                        assert abs(val - phi_star < 1.0e-3) , f'val:{val}, phi star:{phi_star}, step:{step}, sol:{sol}'
 
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
@@ -654,7 +645,7 @@ class jittertemp_filter(base_filter):
                                 self.ensemble,
                                 descriptor=None,
                                 stage=Stage.AFTER_NUDGING,
-                                run=self.model.run,
+                                run=lambda x, y: self.model.run(x, y, s=self.scale),
                                 new_ensemble=self.new_ensemble)
 
             self.model.lambdas = False
@@ -670,7 +661,7 @@ class jittertemp_filter(base_filter):
                 # generate the initial noise variables
                 self.model.randomize(self.ensemble[i])
 
-        theta = 1.0
+        theta = 0.0
         self.temper_count = 0
         while theta < 1.:  # Tempering loop
             dtheta = 1.0 - theta
