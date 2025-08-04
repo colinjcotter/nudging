@@ -35,7 +35,9 @@ class LSDEModel(base_model):
         self.VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
         self.VVOM = fd.FunctionSpace(self.VOM, "DG", 0)
 
-    def run(self, X0, X1):
+    def run(self, X0, X1, s=None):
+        if not s:
+            s = [1.0]*self.nsteps
         for i in range(len(X0)):
             self.X[i].assign(X0[i])
 
@@ -51,7 +53,7 @@ class LSDEModel(base_model):
             self.Lambda.assign(0.)
         for step in range(self.nsteps):
             if self.lambdas:
-                self.Lambda.assign(self.Lambda + self.X[self.nsteps+step+1])
+                self.Lambda.assign(self.Lambda + s[step]*self.X[self.nsteps+step+1])
                 dW.assign(self.X[step+1] + dt**0.5*self.Lambda)
             else:
                 dW.assign(self.X[step+1])
@@ -91,32 +93,25 @@ class LSDEModel(base_model):
             if g:
                 X[count] += gscale*g[count]
 
-    def lambda_functional(self):
+    def lambda_functional(self, s=None):
         nsteps = self.nsteps
         dt = self.dt
-
-        # This should have the effect of returning
-        # sum_n sum_i (dt*lambda_i^2/2 -  lambda_i*dW_i)
-        # where dW_i are the contributing Brownian increments
-        # and lambda_i are the corresponding Girsanov variables
-
-        # in the case of our DG0 Gaussian random fields, there
-        # is one per cell, so we can formulate this for UFL in a
-        # volume integral by dividing by cell volume.
-
         dx = fd.dx
+        cv = 1.0  # should be fd.CellVolume(self.mesh)
+
         self.Lambda.assign(0.)
         for step in range(nsteps):
             # X[0] is the model state
             # X[1], .., X[nsteps] are the dWs
             # X[nsteps+1], .., X[2*nsteps] are the lambdas
-            self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
+            if s:
+                self.Lambda.assign(self.Lambda + s[step]*self.X[nsteps + 1 + step])
+            else:
+                self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
             lambda_step = self.Lambda
             dW_step = self.X[1 + step]
-            cv = 1.0  # should be fd.CellVolume(self.mesh)
-            # but was breaking the graph
             dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
-                                 - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
+                                - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
             if step == 0:
                 lfunc = dlfunc
             else:
