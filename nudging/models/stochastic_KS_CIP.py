@@ -5,39 +5,50 @@ import numpy as np
 
 
 class KS_CIP(base_model):
-    def __init__(self, nsteps, xpoints, n=100, seed=12353,  mesh=False,lambdas=False,
-                 dt=0.01, nu=0.02923, dc=0.01, L=10.):
+    def __init__(
+        self,
+        nsteps,
+        xpoints,
+        n=100,
+        seed=12353,
+        mesh=False,
+        lambdas=False,
+        dt=0.01,
+        nu=0.02923,
+        dc=0.01,
+        L=10.0,
+    ):
 
         self.n = n
         self.nsteps = nsteps
         self.dt = dt
         self.seed = seed
-        self.nu = nu #  viscosity
-        self.dc = dc #  noise coefficient
-        self.L = L #  domain width
+        self.nu = nu  #  viscosity
+        self.dc = dc  #  noise coefficient
+        self.L = L  #  domain width
         self.mesh = mesh
         self.xpoints = xpoints
         self.lambdas = lambdas  # include lambdas in allocate
 
     def setup(self, comm=MPI.COMM_WORLD):
         if not self.mesh:
-            self.mesh = fd.PeriodicIntervalMesh(self.n, self.L,
-                                           comm=comm, name="ksmesh")
-        #self.mesh = mesh
-        x, = fd.SpatialCoordinate(self.mesh)
+            self.mesh = fd.PeriodicIntervalMesh(
+                self.n, self.L, comm=comm, name="ksmesh"
+            )
+        # self.mesh = mesh
+        (x,) = fd.SpatialCoordinate(self.mesh)
 
         self.V = fd.FunctionSpace(self.mesh, "CG", 2)
-        self.Vdg = fd.FunctionSpace(self.mesh, "DG", 1) # for VTK output 
-       
+        self.Vdg = fd.FunctionSpace(self.mesh, "DG", 1)  # for VTK output
 
         un = fd.Function(self.V)
         self.un = un
         unp1 = fd.Function(self.V)
         self.unp1 = unp1
-        uh = (un + unp1)/2 # midpoint
-        
+        uh = (un + unp1) / 2  # midpoint
+
         v = fd.TestFunction(self.V)
-        
+
         dT = fd.Constant(self.dt)
 
         # Setup noise term and lambdas
@@ -45,13 +56,13 @@ class KS_CIP(base_model):
         self.dW = fd.Function(self.W_F)
         self.Lambda = fd.Function(self.W_F)
 
-        # model coefficient 
-        alpha = fd.Constant(1.1) # viscosity
-        beta = fd.Constant(0.02923) # hyperviscosity
-        gamma = fd.Constant(1.) # advection
+        # model coefficient
+        alpha = fd.Constant(1.1)  # viscosity
+        beta = fd.Constant(0.02923)  # hyperviscosity
+        gamma = fd.Constant(1.0)  # advection
 
-        eta = fd.Constant(5.) # penalty term
-        area = fd.Constant(self.L/self.n)
+        eta = fd.Constant(5.0)  # penalty term
+        area = fd.Constant(self.L / self.n)
         dx = fd.dx
         dS = fd.dS
         avg = fd.avg
@@ -59,37 +70,38 @@ class KS_CIP(base_model):
 
         def a(u, v):
             h = area
-            eqn = v.dx(0).dx(0)*u.dx(0).dx(0)*dx # diffusion
-            eqn += avg(u.dx(0).dx(0))*jump(v.dx(0))*dS # <avg(u_xx), jump(v_x)>
-            eqn += avg(v.dx(0).dx(0))*jump(u.dx(0))*dS # <avg(v_xx), jump(u_x)>
-            eqn += eta/h*jump(v.dx(0))*jump(u.dx(0))*dS # eth/h*<jump(v_x), jump(u_x)>
+            eqn = v.dx(0).dx(0) * u.dx(0).dx(0) * dx  # diffusion
+            eqn += avg(u.dx(0).dx(0)) * jump(v.dx(0)) * dS  # <avg(u_xx), jump(v_x)>
+            eqn += avg(v.dx(0).dx(0)) * jump(u.dx(0)) * dS  # <avg(v_xx), jump(u_x)>
+            eqn += (
+                eta / h * jump(v.dx(0)) * jump(u.dx(0)) * dS
+            )  # eth/h*<jump(v_x), jump(u_x)>
             return eqn
 
         eqn = (
-            v*(unp1 - un)*dx
-            - dT*alpha*v.dx(0)*uh.dx(0)*dx
-            + a(dT*beta*uh, v)
-            - dT*gamma*0.5*v.dx(0)*uh*uh*dx
-            - (dT/area)**0.5*self.dc*self.dW*v*dx
-            )
+            v * (unp1 - un) * dx
+            - dT * alpha * v.dx(0) * uh.dx(0) * dx
+            + a(dT * beta * uh, v)
+            - dT * gamma * 0.5 * v.dx(0) * uh * uh * dx
+            - (dT / area) ** 0.5 * self.dc * self.dW * v * dx
+        )
 
         linear_snes_params = {
-                'lag_preconditioner': 5,
-                'lag_preconditioner_persists': None,
-                            }
+            "lag_preconditioner": 5,
+            "lag_preconditioner_persists": None,
+        }
         params = {
-            'snes': linear_snes_params,
+            "snes": linear_snes_params,
             "snes_atol": 1.0e-50,
             "snes_rtol": 1.0e-6,
             "snes_stol": 1.0e-50,
-            "ksp_type":"gmres",
-            "pc_type":"lu"
+            "ksp_type": "gmres",
+            "pc_type": "lu",
         }
 
-        #make the solver
+        # make the solver
         KSProb = fd.NonlinearVariationalProblem(eqn, unp1)
-        self.KSSolver = fd.NonlinearVariationalSolver(KSProb,
-                                                      solver_parameters=params)
+        self.KSSolver = fd.NonlinearVariationalSolver(KSProb, solver_parameters=params)
 
         # state for controls
         self.X = self.allocate()
@@ -104,7 +116,7 @@ class KS_CIP(base_model):
 
     def run(self, X0, X1, s=None):
         if not s:
-            s = [1.0]*self.nsteps
+            s = [1.0] * self.nsteps
         # copy input into model variables for taping
         for i in range(len(X0)):
             self.X[i].assign(X0[i])
@@ -114,15 +126,17 @@ class KS_CIP(base_model):
         self.unp1.assign(self.un)
 
         if self.lambdas:
-            self.Lambda.assign(0.)
+            self.Lambda.assign(0.0)
         # do the timestepping
         for step in range(self.nsteps):
             # get noise variables and lambdas
             if self.lambdas:
-                self.Lambda.assign(self.Lambda + s[step]*self.X[self.nsteps+step+1])
-                self.dW.assign(self.X[step+1] + self.dt**0.5*self.Lambda)
+                self.Lambda.assign(
+                    self.Lambda + s[step] * self.X[self.nsteps + step + 1]
+                )
+                self.dW.assign(self.X[step + 1] + self.dt**0.5 * self.Lambda)
             else:
-                self.dW.assign(self.X[step+1])
+                self.dW.assign(self.X[step + 1])
             # advance in time
             self.KSSolver.solve()
             # copy output to input
@@ -158,30 +172,31 @@ class KS_CIP(base_model):
         count = 0
         for i in range(self.nsteps):
             count += 1
-            X[count].assign(c1*X[count] + c2*rg.normal(
-                self.W_F, 0., 1.))
+            X[count].assign(c1 * X[count] + c2 * rg.normal(self.W_F, 0.0, 1.0))
             if g:
-                X[count] += gscale*g[count]
+                X[count] += gscale * g[count]
 
     def lambda_functional(self, s=None):
         nsteps = self.nsteps
         dt = self.dt
         dx = fd.dx
-        cv = fd.Constant(self.L/self.n)
+        cv = fd.Constant(self.L / self.n)
 
-        self.Lambda.assign(0.)
+        self.Lambda.assign(0.0)
         for step in range(nsteps):
             # X[0] is the model state
             # X[1], .., X[nsteps] are the dWs
             # X[nsteps+1], .., X[2*nsteps] are the lambdas
             if s:
-                self.Lambda.assign(self.Lambda + s[step]*self.X[nsteps + 1 + step])
+                self.Lambda.assign(self.Lambda + s[step] * self.X[nsteps + 1 + step])
             else:
                 self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
             lambda_step = self.Lambda
             dW_step = self.X[1 + step]
-            dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
-                                - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
+            dlfunc = fd.assemble(
+                (1 / cv) * lambda_step**2 * dt / 2 * dx
+                - (1 / cv) * lambda_step * dW_step * dt**0.5 * dx
+            )
             if step == 0:
                 lfunc = dlfunc
             else:

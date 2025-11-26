@@ -5,8 +5,7 @@ from numpy import allclose
 
 from nudging.parallel_arrays import in_range
 
-from nudging.parallel_arrays import DistributedDataLayout1D, \
-    SharedArray, OwnedArray
+from nudging.parallel_arrays import DistributedDataLayout1D, SharedArray, OwnedArray
 
 partitions = [3, (2, 3, 4, 2)]
 
@@ -62,10 +61,7 @@ def test_distributed_data_layout(partition):
     assert layout.global_size == nglobal
     assert layout.offset == offset
 
-    max_indices = {
-        'l': nlocal,
-        'g': nglobal
-    }
+    max_indices = {"l": nlocal, "g": nglobal}
 
     # shift index: from_range == to_range
     for itype in max_indices.keys():
@@ -75,7 +71,7 @@ def test_distributed_data_layout(partition):
 
         # +ve index unchanged
         pos_shift = layout.transform_index(i, itype=itype, rtype=itype)
-        assert (pos_shift == i)
+        assert pos_shift == i
 
         # -ve index changed to +ve
         neg_shift = layout.transform_index(-i, itype=itype, rtype=itype)
@@ -86,43 +82,43 @@ def test_distributed_data_layout(partition):
     ilocal = 1
 
     # +ve index in local range
-    iglobal = layout.transform_index(ilocal, itype='l', rtype='g')
-    assert (iglobal == offset + ilocal)
+    iglobal = layout.transform_index(ilocal, itype="l", rtype="g")
+    assert iglobal == offset + ilocal
 
     # -ve index in local range
-    iglobal = layout.transform_index(-ilocal, itype='l', rtype='g')
-    assert (iglobal == offset + nlocal - ilocal)
+    iglobal = layout.transform_index(-ilocal, itype="l", rtype="g")
+    assert iglobal == offset + nlocal - ilocal
 
     ilocal = nlocal + 1
 
     # +ve index out of local range
     with pytest.raises(IndexError):
-        iglobal = layout.transform_index(ilocal, itype='l', rtype='g')
+        iglobal = layout.transform_index(ilocal, itype="l", rtype="g")
 
     # -ve index out of local range
     with pytest.raises(IndexError):
-        iglobal = layout.transform_index(-ilocal, itype='l', rtype='g')
+        iglobal = layout.transform_index(-ilocal, itype="l", rtype="g")
 
     # global address -> local address
 
     # +ve index in range
     iglobal = offset + 1
-    ilocal = layout.transform_index(iglobal, itype='g', rtype='l')
-    assert (ilocal == 1)
+    ilocal = layout.transform_index(iglobal, itype="g", rtype="l")
+    assert ilocal == 1
 
     assert layout.is_local(iglobal)
 
     # -ve index in range
     iglobal = -sum(partition) + offset + 1
-    ilocal = layout.transform_index(iglobal, itype='g', rtype='l')
-    assert (ilocal == 1)
+    ilocal = layout.transform_index(iglobal, itype="g", rtype="l")
+    assert ilocal == 1
 
     assert layout.is_local(iglobal)
 
     # +ve index out of local range
     iglobal = (offset + nlocal + 1) % nglobal
     with pytest.raises(IndexError):
-        ilocal = layout.transform_index(iglobal, itype='g', rtype='l')
+        ilocal = layout.transform_index(iglobal, itype="g", rtype="l")
 
     assert not layout.is_local(iglobal)
 
@@ -132,7 +128,7 @@ def test_distributed_data_layout(partition):
     # -ve index out of local range
     iglobal = -(nglobal - (offset + nlocal))
     with pytest.raises(IndexError):
-        ilocal = layout.transform_index(iglobal, itype='g', rtype='l')
+        ilocal = layout.transform_index(iglobal, itype="g", rtype="l")
 
     assert not layout.is_local(iglobal)
 
@@ -178,16 +174,16 @@ def test_shared_array(partition):
     # each rank sets its own elements using global access
     for i in range(local_size):
         j = array.offset + i
-        array.dglobal[j] = (array.rank + 1)*2
+        array.dglobal[j] = (array.rank + 1) * 2
 
     array.synchronise()
 
     # check all elements are correct
     for i in range(local_size):
-        assert array.dlocal[i] == (array.rank + 1)*2
+        assert array.dlocal[i] == (array.rank + 1) * 2
 
     for rank in range(array.comm.size):
-        check = (rank + 1)*2
+        check = (rank + 1) * 2
         offset = sum(partition[:rank])
         for i in range(partition[rank]):
             j = offset + i
@@ -236,7 +232,7 @@ def test_shared_array_manager(partition):
     array = SharedArray(partition=partition, dtype=int, comm=comm)
 
     # try to set a globally addressed element we don't own
-    bad_global_index = array.offset-1
+    bad_global_index = array.offset - 1
 
     with pytest.raises(IndexError):
         array.dglobal[bad_global_index] = 1
@@ -273,7 +269,7 @@ def test_owned_array():
     # initialise data
     for i in range(size):
         if array.is_owner():
-            array[i] = 2*(i+1)
+            array[i] = 2 * (i + 1)
         else:
             assert array[i] == 0
 
@@ -281,7 +277,7 @@ def test_owned_array():
 
     # check data
     for i in range(size):
-        assert array[i] == 2*(i+1)
+        assert array[i] == 2 * (i + 1)
 
     # only owner can modify
     if not array.is_owner():
@@ -289,22 +285,22 @@ def test_owned_array():
             array[0] = 0
 
     # resize
-    new_size = 2*size
+    new_size = 2 * size
     array.resize(new_size)
 
     assert array.size == new_size
 
     # check original data is unmodified
     for i in range(size):
-        assert array[i] == 2*(i+1)
+        assert array[i] == 2 * (i + 1)
 
     # initialise new data
     for i in range(new_size):
         if array.is_owner():
-            array[i] = 10*(i-5)
+            array[i] = 10 * (i - 5)
 
     array.synchronise()
 
     # check new data
     for i in range(new_size):
-        assert array[i] == 10*(i-5)
+        assert array[i] == 10 * (i - 5)

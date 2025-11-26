@@ -17,11 +17,13 @@ x = fd.SpatialCoordinate(model.mesh)
 sin = fd.sin
 pi = fd.pi
 cos = fd.cos
-q0.interpolate(sin(8*pi*x[0])*sin(8*pi*x[1])
-               + 0.4*cos(6*pi*x[0])*cos(6*pi*x[1])
-               + 0.02*sin(2*pi*x[0])
-               + 0.02*sin(2*pi*x[1])
-               + 0.3*cos(10*pi*x[0])*cos(4*pi*x[1]))
+q0.interpolate(
+    sin(8 * pi * x[0]) * sin(8 * pi * x[1])
+    + 0.4 * cos(6 * pi * x[0]) * cos(6 * pi * x[1])
+    + 0.02 * sin(2 * pi * x[0])
+    + 0.02 * sin(2 * pi * x[1])
+    + 0.3 * cos(10 * pi * x[0]) * cos(4 * pi * x[1])
+)
 
 N_obs = 5
 
@@ -49,8 +51,8 @@ for i in range(N_obs):
     u1_true_all[i, :] = u[:, 0]
     u2_true_all[i, :] = u[:, 1]
 
-    u_1_noise = np.random.normal(0.0, 0.05, (n+1)**2)
-    u_2_noise = np.random.normal(0.0, 0.05, (n+1)**2)
+    u_1_noise = np.random.normal(0.0, 0.05, (n + 1) ** 2)
+    u_2_noise = np.random.normal(0.0, 0.05, (n + 1) ** 2)
     u1_obs = u[:, 0] + u_1_noise
     u2_obs = u[:, 1] + u_2_noise
     u1_obs_all[i, :] = u1_obs

@@ -12,11 +12,12 @@ model = ndg.Euler_SD(n, nsteps=nsteps)
 
 MALA = False
 verbose = True
-jtfilter = ndg.jittertemp_filter(n_temp=4, n_jitt=4, rho=0.99,
-                                 verbose=verbose, MALA=MALA)
+jtfilter = ndg.jittertemp_filter(
+    n_temp=4, n_jitt=4, rho=0.99, verbose=verbose, MALA=MALA
+)
 # Load data
-u_exact = np.load('u_true_data.npy')
-u_vel = np.load('u_obs_data.npy')
+u_exact = np.load("u_true_data.npy")
+u_vel = np.load("u_obs_data.npy")
 
 nensemble = [5, 5, 5, 5]
 
@@ -28,18 +29,21 @@ sin = fd.sin
 pi = fd.pi
 cos = fd.cos
 for i in range(nensemble[jtfilter.ensemble_rank]):
-    a = model.rg.uniform(model.R, 0., 1.0)
-    b = model.rg.uniform(model.R, 0., 1.0)
-    q0_in = a*sin(8*pi*x[0])*sin(8*pi*x[1])\
-        + 0.4*b*cos(6*pi*x[0])*cos(6*pi*x[1])\
-        + 0.02*a*sin(2*pi*x[0])+0.02*a*sin(2*pi*x[1])\
-        + 0.3*b*cos(10*pi*x[0])*cos(4*pi*x[1])
+    a = model.rg.uniform(model.R, 0.0, 1.0)
+    b = model.rg.uniform(model.R, 0.0, 1.0)
+    q0_in = (
+        a * sin(8 * pi * x[0]) * sin(8 * pi * x[1])
+        + 0.4 * b * cos(6 * pi * x[0]) * cos(6 * pi * x[1])
+        + 0.02 * a * sin(2 * pi * x[0])
+        + 0.02 * a * sin(2 * pi * x[1])
+        + 0.3 * b * cos(10 * pi * x[0]) * cos(4 * pi * x[1])
+    )
     q = jtfilter.ensemble[i][0]
     q.interpolate(q0_in)
 
 
 def log_likelihood(y, Y):
-    ll = (y-Y)**2/0.05**2/2*fd.dx
+    ll = (y - Y) ** 2 / 0.05**2 / 2 * fd.dx
     return ll
 
 
@@ -56,14 +60,10 @@ u2_sim_list = []
 
 ecomm = jtfilter.subcommunicators.ensemble_comm
 for m in range(u_vel.shape[1]):
-    u1_e_shared = ndg.SharedArray(partition=nensemble,
-                                  comm=ecomm)
-    u2_e_shared = ndg.SharedArray(partition=nensemble,
-                                  comm=ecomm)
-    u1_sim_shared = ndg.SharedArray(partition=nensemble,
-                                    comm=ecomm)
-    u2_sim_shared = ndg.SharedArray(partition=nensemble,
-                                    comm=ecomm)
+    u1_e_shared = ndg.SharedArray(partition=nensemble, comm=ecomm)
+    u2_e_shared = ndg.SharedArray(partition=nensemble, comm=ecomm)
+    u1_sim_shared = ndg.SharedArray(partition=nensemble, comm=ecomm)
+    u2_sim_shared = ndg.SharedArray(partition=nensemble, comm=ecomm)
     u1_e_list.append(u1_e_shared)
     u2_e_list.append(u2_e_shared)
     u1_sim_list.append(u1_sim_shared)
@@ -75,12 +75,12 @@ if fd.COMM_WORLD.rank == 0:
     u2_e = np.zeros((np.sum(nensemble), ushape[0], ushape[1]))
     u1_sim_obs_alltime_step = np.zeros((np.sum(nensemble), nsteps, ushape[1]))
     u2_sim_obs_alltime_step = np.zeros((np.sum(nensemble), nsteps, ushape[1]))
-    u1_sim_obs_allobs_step = np.zeros((np.sum(nensemble),
-                                       nsteps*ushape[0],
-                                       ushape[1]))
-    u2_sim_obs_allobs_step = np.zeros((np.sum(nensemble),
-                                       nsteps*ushape[0],
-                                       ushape[1]))
+    u1_sim_obs_allobs_step = np.zeros(
+        (np.sum(nensemble), nsteps * ushape[0], ushape[1])
+    )
+    u2_sim_obs_allobs_step = np.zeros(
+        (np.sum(nensemble), nsteps * ushape[0], ushape[1])
+    )
 
 # do assimiliation steps
 for k in range(N_obs):
@@ -112,11 +112,13 @@ for k in range(N_obs):
             u2_sim_list[m].synchronise()
             if fd.COMM_WORLD.rank == 0:
                 u1_sim_obs_alltime_step[:, step, m] = u1_sim_list[m].data()
-                u1_sim_obs_allobs_step[:, nsteps*k+step, m] = \
+                u1_sim_obs_allobs_step[:, nsteps * k + step, m] = (
                     u1_sim_obs_alltime_step[:, step, m]
+                )
                 u2_sim_obs_alltime_step[:, step, m] = u2_sim_list[m].data()
-                u2_sim_obs_allobs_step[:, nsteps*k+step, m] = \
+                u2_sim_obs_allobs_step[:, nsteps * k + step, m] = (
                     u2_sim_obs_alltime_step[:, step, m]
+                )
 
     jtfilter.assimilation_step(u_VOM, log_likelihood)
 
@@ -140,7 +142,8 @@ for k in range(N_obs):
 
 if fd.COMM_WORLD.rank == 0:
     u_e = np.stack((u1_e, u2_e), axis=-1)
-    u_sim_allobs_step = np.stack((u1_sim_obs_allobs_step,
-                                  u2_sim_obs_allobs_step), axis=-1)
+    u_sim_allobs_step = np.stack(
+        (u1_sim_obs_allobs_step, u2_sim_obs_allobs_step), axis=-1
+    )
     np.save("Velocity_ensemble.npy", u_e)
     np.save("Velocity simalated_all_time.npy", u_sim_allobs_step)

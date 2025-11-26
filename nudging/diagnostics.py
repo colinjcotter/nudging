@@ -25,9 +25,9 @@ class base_diagnostic(object, metaclass=ABCMeta):
 
     def __init__(self, stage, ecomm, nensemble, dtype=None):
         self.stage = stage
-        self.shared_arr = SharedArray(partition=nensemble,
-                                      dtype=dtype,
-                                      comm=ecomm.ensemble_comm)
+        self.shared_arr = SharedArray(
+            partition=nensemble, dtype=dtype, comm=ecomm.ensemble_comm
+        )
         self.grank = ecomm.global_comm.rank
         self.N = nensemble[ecomm.ensemble_comm.rank]
         self.dtype = dtype
@@ -104,10 +104,15 @@ class base_diagnostic(object, metaclass=ABCMeta):
             self.values = []
 
 
-def compute_diagnostics(diagnostic_list, ensemble,
-                        descriptor, stage,
-                        other_data={}, run=None,
-                        new_ensemble=None):
+def compute_diagnostics(
+    diagnostic_list,
+    ensemble,
+    descriptor,
+    stage,
+    other_data={},
+    run=None,
+    new_ensemble=None,
+):
     """
     Compute all diagnostics in diagnostic_list labelled with stage
 

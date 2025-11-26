@@ -34,8 +34,7 @@ class ensemble_petsc_interface:
         for x in X:
             fn = x.tape_value()
             if not isinstance(fn, fd.Function):
-                raise NotImplementedError(
-                    "Controls must be Firedrake Functions")
+                raise NotImplementedError("Controls must be Firedrake Functions")
             function_spaces.append(fn.ufl_function_space())
         # This will flatten mixed spaces into one mixed space
         mixed_function_space = reduce(mul, function_spaces)
@@ -51,9 +50,9 @@ class ensemble_petsc_interface:
         self.w = w
         gcomm = self.ensemble.global_comm
         with w.dat.vec as fvec:
-            self.vec = PETSc.Vec().createWithArray(fvec.array,
-                                                   size=self.sizes,
-                                                   comm=gcomm)
+            self.vec = PETSc.Vec().createWithArray(
+                fvec.array, size=self.sizes, comm=gcomm
+            )
 
     def vec2list(self, vec):
         """
@@ -108,8 +107,7 @@ class ensemble_petsc_interface:
 
 
 class ParameterisedEnsembleReducedFunctional:
-    def __init__(self, Js, Controls, Parameters, ensemble,
-                 gather_functional):
+    def __init__(self, Js, Controls, Parameters, ensemble, gather_functional):
         self.controls = Controls
         full_Controls = Controls + Parameters
         self.Parameters = []
@@ -117,9 +115,13 @@ class ParameterisedEnsembleReducedFunctional:
             self.Parameters.append(parameter.tape_value())
         derivative_components = [i for i in range(len(Controls))]
         self.rf = fadj.EnsembleReducedFunctional(
-            Js, full_Controls, ensemble, scatter_control=False,
+            Js,
+            full_Controls,
+            ensemble,
+            scatter_control=False,
             gather_functional=gather_functional,
-            derivative_components=derivative_components)
+            derivative_components=derivative_components,
+        )
         self.derivative_components = derivative_components
 
     def update_parameters(self, Parameters):
@@ -138,8 +140,7 @@ class ParameterisedEnsembleReducedFunctional:
 
 
 class ensemble_tao_solver:
-    def __init__(self, Jhat, ensemble,
-                 solver_parameters, options_prefix="ensemble"):
+    def __init__(self, Jhat, ensemble, solver_parameters, options_prefix="ensemble"):
         """
         Jhat - firedrake.EnsembleReducedFunctional
         ensemble - Firedrake.Ensemble ensemble communication object
@@ -170,21 +171,20 @@ class ensemble_tao_solver:
             def mult(self, mat, X, Y):
                 # abusing vec2list side effect of copying to interface.w
                 self.interface.vec2list(X)
-                fd.assemble(fd.inner(self.v, self.interface.w)*fd.dx,
-                            tensor=self.ycofunc)
+                fd.assemble(
+                    fd.inner(self.v, self.interface.w) * fd.dx, tensor=self.ycofunc
+                )
                 with self.ycofunc.dat.vec_ro as yvec:
                     yvec.copy(Y)
 
         sizes = interface.sizes
-        M = PETSc.Mat().createPython([sizes, sizes],
-                                     comm=ensemble.global_comm)
+        M = PETSc.Mat().createPython([sizes, sizes], comm=ensemble.global_comm)
         M.setPythonContext(inner_mat(interface))
         M.setUp()
         tao.setGradientNorm(M)
 
         flat_solver_parameters = flatten_parameters(solver_parameters)
-        options = OptionsManager(flat_solver_parameters,
-                                 options_prefix)
+        options = OptionsManager(flat_solver_parameters, options_prefix)
         tao.setOptionsPrefix(options.options_prefix)
         options.set_from_options(tao)
 
