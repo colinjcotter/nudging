@@ -2,19 +2,41 @@ from firedrake import dx
 from nudging import LSDEModel, jittertemp_filter, base_diagnostic, Stage
 import numpy as np
 from firedrake.petsc import PETSc
+import yaml
+import sys
+import os
 
-Print = PETSc.Sys.Print
+Print = PETSc.Sys.Print  # Set up printing only on the first rank
+# Read the configuration from a yaml file. If a yaml file is not provided, use default settings
+if len(sys.argv) > 1:
+    with open(sys.argv[1], "r") as f:
+        config = yaml.safe_load(f)
+        Print("Configuration loaded from", sys.argv[1])
+else:
+    config = {}
+    config["T"] = 1.0
+    config["nsteps"] = 5
+    config["A"] = 1.0
+    config["D"] = 1.0
+    config["nranks"] = 8
+
 # model
 # multiply by A and add D
-T = 1.0
-nsteps = 5
+T = config["T"]
+nsteps = config["nsteps"]
 dt = T / nsteps
-A = 1.0
-D = 1.0
+A = config["A"]
+D = config["D"]
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
 p_per_rank = 10
-nranks = 30
+nranks = config["nranks"]  # total number of ranks
+max_n_rank = os.cpu_count()
+if nranks > max_n_rank:
+    Print(
+        f"Requested nranks {nranks} exceeds available cpu count {max_n_rank}, setting nranks to {max_n_rank}"
+    )
+    nranks = max_n_rank
 nensemble = [p_per_rank] * nranks
 
 myfilter = jittertemp_filter(
