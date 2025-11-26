@@ -130,3 +130,9 @@ dmypy.json
 
 # JSON files
 *.json
+
+# Output files
+*.npy
+*.jpg
+*.png 
+
