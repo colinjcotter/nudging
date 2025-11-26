@@ -1,0 +1,5 @@
+T: 1.0
+nsteps: 5
+A: 1.0
+D: 1.0
+nranks: 8
