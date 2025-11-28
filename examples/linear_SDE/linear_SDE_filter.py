@@ -5,6 +5,7 @@ from firedrake.petsc import PETSc
 import yaml
 import sys
 import os
+from rich.table import Table
 
 Print = PETSc.Sys.Print  # Set up printing only on the first rank
 # Read the configuration from a yaml file. If a yaml file is not provided, use default settings
@@ -19,17 +20,23 @@ else:
     config["A"] = 1.0
     config["D"] = 1.0
     config["nranks"] = 8
+    config["p_per_rank"] = 10
+    config["verbose"] = False
+    Print("Using default configuration with hardcoded parameters.")
 
 # model
+# The one-dimensional linear SDE dx = -A*x*dt + D*dW
 # multiply by A and add D
 T = config["T"]
 nsteps = config["nsteps"]
 dt = T / nsteps
-A = config["A"]
-D = config["D"]
+A = config["A"]  # positive, constant parameter
+D = config["D"]  # positive, constant parameter
+
+# Instantiate the model
 model = LSDEModel(A=A, D=D, nsteps=nsteps, dt=dt, lambdas=True, seed=7123)
 
-p_per_rank = 10
+p_per_rank = config["p_per_rank"]  # number of particles per rank
 nranks = config["nranks"]  # total number of ranks
 max_n_rank = os.cpu_count()
 if nranks > max_n_rank:
@@ -37,7 +44,8 @@ if nranks > max_n_rank:
         f"Requested nranks {nranks} exceeds available cpu count {max_n_rank}, setting nranks to {max_n_rank}"
     )
     nranks = max_n_rank
-nensemble = [p_per_rank] * nranks
+nensemble = [p_per_rank] * nranks  # ensemble size per rank
+
 
 myfilter = jittertemp_filter(
     n_jitt=0,
@@ -51,15 +59,19 @@ myfilter = jittertemp_filter(
 myfilter.setup(nensemble=nensemble, model=model, residual=False)
 
 # data
+# The ensemble is initialised as samples from N(0, D^2/(2A))
 c = 0.0
 d = D**2 / 2 / A
 y0 = np.random.normal(loc=c, scale=np.sqrt(d))
-Print("Initial observation value:", y0)
+if config["verbose"]:
+    Print("Initial observation value:", y0)
 
 
 y = model.obs()
 y0 = -0.05563397349186569  # need to update from invariant distribution
 y.dat.data[:] = y0
+if config["verbose"]:
+    Print("Initial observation assigned to observation function:", y.dat.data[:])
 
 # prepare the initial ensemble
 c = 0.0

@@ -1,5 +1,12 @@
 T: 1.0
 nsteps: 5
-A: 1.0
+# Model parameters 
+# For the linear SDE dx = -A*x*dt + D*dW
+A: 1.0 
 D: 1.0
+# Number of ranks (processes)
 nranks: 8
+# Number of particles per rank
+p_per_rank: 50
+# Verbose output
+verbose: True
