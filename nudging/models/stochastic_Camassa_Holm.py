@@ -5,10 +5,11 @@ import numpy as np
 
 
 class Camsholm(base_model):
-    def __init__(self, n, nsteps, xpoints, seed=12353, lambdas=False,
-                 dt=0.025, alpha=1.0, mu=0.01, salt=False):
+    def __init__(self, n, Ld, nsteps, xpoints, seed=2353, lambdas=False,
+                 dt=0.0025, alpha=1.0, mu=0.01, salt=False):
 
         self.n = n
+        self.Ld = Ld
         self.nsteps = nsteps
         self.alpha = alpha
         self.mu = mu
@@ -19,14 +20,14 @@ class Camsholm(base_model):
         self.lambdas = lambdas  # include lambdas in allocate
 
     def setup(self, comm=MPI.COMM_WORLD):
-        self.mesh = fd.PeriodicIntervalMesh(self.n, 40.0, comm=comm)
+        self.mesh = fd.PeriodicIntervalMesh(self.n, self.Ld, comm=comm)
         x, = fd.SpatialCoordinate(self.mesh)
 
         self.V = fd.FunctionSpace(self.mesh, "CG", 1)
         V = fd.FunctionSpace(self.mesh, "CG", 1)
         self.W = fd.MixedFunctionSpace((V, V))
         self.w0 = fd.Function(self.W)
-        m0, u0 = self.w0.split()
+        m0, u0 = self.w0.subfunctions
         One = fd.Function(V).assign(1.0)
         dx = fd.dx
         self.Area = fd.assemble(One*dx)
@@ -77,23 +78,25 @@ class Camsholm(base_model):
         self.wsolver = fd.LinearVariationalSolver(w_prob,
                                                   solver_parameters=sp)
 
-        # finite element linear functional
         Dt = self.dt
-        mh = 0.5*(m1 + m0)
-        uh = 0.5*(u1 + u0)
+        sqrt_dt = Dt**0.5
+        noise_scale = 0.5
+        Ln = noise_scale * sqrt_dt*dU_3
 
-        if self.salt:
-            # SALT noise
-            v = uh*Dt+dU_3*Dt**0.5
+        if self.salt:        
+            mh = 0.5*(m1 + m0)
+            uh = 0.5*(u1 + u0)
+            v = uh*Dt+Ln
+            #SALT type
+            L = ((q*u1 + alphasq*q.dx(0)*u1.dx(0) - q*m1)*dx 
+                    +(p*(m1-m0) +(p*v.dx(0)*mh -p.dx(0)*v*mh))*dx)
         else:
-            # additive noise
-            v = uh*Dt
-        L = ((q*u1 + alphasq*q.dx(0)*u1.dx(0) - q*m1)*dx
-             + (p*(m1-m0) + (p*v.dx(0)*mh - p.dx(0)*v*mh)
-                + self.mu*Dt*p.dx(0)*mh.dx(0))*dx)
+            # bilinear form
+            mh = 0.5*Dt*(m1 + m0)+Ln
+            uh = 0.5*(u1 + u0)
+            L = ((q*u1 + alphasq*q.dx(0)*u1.dx(0) - q*m1)*dx +
+                    (p*(m1-m0) + (p*uh.dx(0)*mh -p.dx(0)*uh*mh))*dx)
 
-        if not self.salt:
-            L += p*dU_3*Dt**0.5*dx
 
         # timestepping solver
         uprob = fd.NonlinearVariationalProblem(L, self.w1)
@@ -105,7 +108,7 @@ class Camsholm(base_model):
         self.X = self.allocate()
 
         # vertex only mesh for observations
-        x_obs = np.linspace(0, 40, num=self.xpoints, endpoint=False)
+        x_obs = np.linspace(0, self.Ld, num=self.xpoints, endpoint=False)
         x_obs_list = []
         for i in x_obs:
             x_obs_list.append([i])
@@ -148,7 +151,7 @@ class Camsholm(base_model):
         return controls_list
 
     def obs(self):
-        m, u = self.w0.split()
+        m, u = self.w0.subfunctions
         Y = fd.Function(self.VVOM)
         Y.interpolate(u)
         return Y
