@@ -2,12 +2,14 @@ import firedrake as fd
 from pyop2.mpi import MPI
 from nudging.model import base_model
 import numpy as np
+from firedrake.petsc import PETSc
+print = PETSc.Sys.Print
 
 
 class Euler_mixSD(base_model):
     def __init__(self, n_xy_pts, nsteps, dt,
                  noise_scale, mesh=False,
-                 salt=False, lambdas=False, seed=12353):
+                 salt=False, lambdas=False, seed=123450):
         self.n = n_xy_pts
         self.nsteps = nsteps
         self.dt = dt
@@ -47,7 +49,10 @@ class Euler_mixSD(base_model):
                  "fieldsplit_1_pc_type": "lu",
                  "fieldsplit_1_pc_factor_mat_solver_type": "mumps",
                  #"ksp_converged_reason": None,
-                 "snes_type":"ksponly"}
+                 #"snes_converged_reason": None,
+                 #"snes_ksp_ew": None,
+                 "snes_type":"ksponly"
+                 }
 
         # Setup noise term using Matern formula
         self.Vcg = fd.FunctionSpace(self.mesh, "CG", 1)  # Streamfunctions
@@ -61,6 +66,7 @@ class Euler_mixSD(base_model):
         # cell_area = fd.CellVolume(self.mesh)
         # alpha_w =(1/cell_area**0.5)
         kappa_inv_sq = fd.Constant(1/30.0**2)
+        #kappa_inv_sq = fd.Constant(1)
 
         self.dU_1 = fd.Function(self.Vcg)
         self.dU_2 = fd.Function(self.Vcg)
@@ -105,17 +111,18 @@ class Euler_mixSD(base_model):
         # # trial functions
         # q, psi =  fd.TrialFunctions(self.V_mix)
 
-        # timestepping equation
+        # timestep
         Dt = self.dt
 
-        # mid points
         # mid point formulation
         qh = 0.5*(self.q1+self.q0)
         psih = 0.5*(self.psi1+self.psi0)
 
         # SALT noise
         if self.salt:
-            psi_mod = psih + self.noise_scale*self.dU_3*Dt**0.5
+            print('salt noise', self.noise_scale)
+            psi_mod = psih + (1/Dt)*self.noise_scale*self.dU_2*Dt**0.5
+
         else:
             psi_mod = psih
 
@@ -126,15 +133,16 @@ class Euler_mixSD(base_model):
 
         # source term
         Q = fd.Function(Vdg)
-        Q.interpolate(0.5*fd.sin(8*fd.pi*x[0]))
+        Q.interpolate(0.1*fd.sin(8*fd.pi*x[0]))
 
-        F = (self.q1-self.q0)*p*dx + Dt*p*(r*self.q1-Q)*dx\
+        F = (self.q1-self.q0)*p*dx + Dt*p*(r*qh-Q)*dx\
             + Dt*(fd.dot(fd.grad(p), -qh*gradperp(psi_mod)))*dx\
             + Dt*(fd.dot(fd.jump(p), un("+")*qh("+") - un("-")*qh("-")))*dS\
             + (fd.inner(fd.grad(self.psi1), fd.grad(phi)))*dx\
-            + self.psi1*phi*dx + self.q1*phi*dx
+            + self.q1*phi*dx\
+            #+ self.psi1*phi*dx no need to add this term
         if not self.salt:
-            F += self.noise_scale*p*self.dU_3*Dt**0.5*dx
+            F += self.noise_scale*p*self.dW*Dt**0.5*dx
 
         # timestepping solver
         qphi_prob = fd.NonlinearVariationalProblem(F, self.qpsi1, bcs=bc)
@@ -146,8 +154,10 @@ class Euler_mixSD(base_model):
         self.X = self.allocate()
 
         # observations
-        x_point = np.linspace(0.0+(4/self.n), self.Lx-(4/self.n), int(self.n/4+1))
-        y_point = np.linspace(0.0+(4/self.n), self.Ly-(4/self.n), int(self.n/4+1))
+        # x_point = np.linspace(0.0, self.Lx, self.n+1)
+        # y_point = np.linspace(0.0, self.Ly, self.n+1)
+        x_point = np.linspace(0.0, self.Lx, int(self.n/4+1))
+        y_point = np.linspace(0.0, self.Ly, int(self.n/4+1))
         xv, yv = np.meshgrid(x_point, y_point)
         x_obs_list = np.vstack([xv.ravel(), yv.ravel()]).T.tolist()
         VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
@@ -160,14 +170,13 @@ class Euler_mixSD(base_model):
         # copy input into model variables for taping
         for i in range(len(X0)):
             self.X[i].assign(X0[i])
-        # copy initial condition into model variable
+
         self.qpsi0.assign(self.X[0])
 
         if self.lambdas:
             self.Lambda.assign(0.)
-        # do the timestepping
         for step in range(self.nsteps):
-            # get noise variables and lambdas
+            # setup the noise and lambda term
             self.dW.assign(self.X[step+1])
             if self.lambdas:
                 self.Lambda.assign(self.Lambda + s[step]*self.X[self.nsteps+step+1])
@@ -197,7 +206,7 @@ class Euler_mixSD(base_model):
     def obs(self):
         q, psi = self.qpsi0.subfunctions
         Y = fd.Function(self.VVOM)
-        Y.interpolate(psi)
+        Y.interpolate(q)
         return Y
 
     def allocate(self):
@@ -221,7 +230,7 @@ class Euler_mixSD(base_model):
             if g:
                 X[count] += gscale*g[count]
 
-    def lambda_functional(self, s=None):
+    def lambda_functional(self):
         nsteps = self.nsteps
         dt = self.dt
         dx = fd.dx
@@ -246,3 +255,28 @@ class Euler_mixSD(base_model):
                 lfunc += dlfunc
         return lfunc
 
+	# def lambda_functional(self, s=None):
+    #     nsteps = self.nsteps
+    #     dt = self.dt
+    #     dx = fd.dx
+    #     cv = fd.Constant(self.L/self.n)
+
+    #     self.Lambda.assign(0.)
+    #     for step in range(nsteps):
+    #         # X[0] is the model state
+    #         # X[1], .., X[nsteps] are the dWs
+    #         # X[nsteps+1], .., X[2*nsteps] are the lambdas
+    #         if s:
+    #             self.Lambda.assign(self.Lambda + s[step]*self.X[nsteps + 1 + step])
+    #         else:
+    #             self.Lambda.assign(self.Lambda + self.X[nsteps + 1 + step])
+    #         lambda_step = self.Lambda
+    #         dW_step = self.X[1 + step]
+    #         dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
+    #                             - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
+    #         if step == 0:
+    #             lfunc = dlfunc
+    #         else:
+    #             lfunc += dlfunc
+    #     return lfunc
+        
