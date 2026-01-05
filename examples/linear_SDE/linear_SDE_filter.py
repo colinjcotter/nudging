@@ -9,20 +9,29 @@ from rich.table import Table
 
 Print = PETSc.Sys.Print  # Set up printing only on the first rank
 # Read the configuration from a yaml file. If a yaml file is not provided, use default settings
-if len(sys.argv) > 1:
-    with open(sys.argv[1], "r") as f:
+opts = PETSc.Options()
+filename = opts.getString("-f", default=None)
+final_time = opts.getReal("-T", default=1.0)
+nsteps = opts.getInt("-n", default=5)
+parameter_A = opts.getReal("-A", default=1.0)
+parameter_D = opts.getReal("-D", default=1.0)
+nranks = opts.getInt("-r", default=8)
+particles_per_rank = opts.getInt("-p", default=10)
+verbose = opts.getBool("-v", default=False)
+if filename is not None:
+    with open(filename, "r") as f:
         config = yaml.safe_load(f)
-        Print("Configuration loaded from", sys.argv[1])
+        Print("Configuration loaded from", filename)
 else:
     config = {}
-    config["T"] = 1.0
-    config["nsteps"] = 5
-    config["A"] = 1.0
-    config["D"] = 1.0
-    config["nranks"] = 8
-    config["p_per_rank"] = 10
-    config["verbose"] = False
-    Print("Using default configuration with hardcoded parameters.")
+    config["T"] = final_time
+    config["nsteps"] = nsteps
+    config["A"] = parameter_A
+    config["D"] = parameter_D
+    config["nranks"] = nranks
+    config["p_per_rank"] = particles_per_rank
+    config["verbose"] = verbose
+    Print("Using configuration from command line arguments or default values.")
 
 # model
 # The one-dimensional linear SDE dx = -A*x*dt + D*dW
@@ -44,7 +53,7 @@ if nranks > max_n_rank:
         f"Requested nranks {nranks} exceeds available cpu count {max_n_rank}, setting nranks to {max_n_rank}"
     )
     nranks = max_n_rank
-nensemble = [p_per_rank] * nranks  # ensemble size per rank
+nensemble = [p_per_rank] * nranks  # list with ensemble size per rank
 
 
 myfilter = jittertemp_filter(
@@ -70,15 +79,20 @@ if config["verbose"]:
 y = model.obs()
 y0 = -0.05563397349186569  # need to update from invariant distribution
 y.dat.data[:] = y0
-if config["verbose"]:
-    Print("Initial observation assigned to observation function:", y.dat.data[:])
+
 
 # prepare the initial ensemble
+# Ensemble is initialized as samples from N(0, D^2/(2A))
+
 c = 0.0
 d = D**2 / 2 / A
+
+#
 for i in range(nensemble[myfilter.ensemble_rank]):
     dx0 = model.rg.normal(model.R, c, d)
+    Print(f"dx0: {dx0}")
     u = myfilter.ensemble[i][0]
+    Print(f"u : {u}")
     u.assign(dx0)
 
 # observation noise standard deviation
