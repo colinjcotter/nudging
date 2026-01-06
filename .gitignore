@@ -135,4 +135,7 @@ dmypy.json
 *.npy
 *.jpg
 *.png 
+*.pickle
+*.pkl
+*.npz
 
