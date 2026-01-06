@@ -20,7 +20,7 @@ def test_ensemble_tao_solver():
     Controls = []
     xs = []
     for i in range(n_Js[rank]):
-        val = Js_offset[rank]+i+1
+        val = Js_offset[rank] + i + 1
         x = fd.Function(R, val=val)
         J = fd.assemble(x * x * fd.dx(domain=mesh))
         Js.append(J)
@@ -33,15 +33,15 @@ def test_ensemble_tao_solver():
         a = fadj.AdjFloat(1.0)
         as1.append(a)
         Jg_m.append(fadj.Control(a))
-    Ja = as1[0]**2
+    Ja = as1[0] ** 2
     for i in range(1, 5):
-        Ja += as1[i]**2
+        Ja += as1[i] ** 2
     Jg = fadj.ReducedFunctional(Ja, Jg_m)
     val = 1.0**2 + 2.0**2 + 3.0**2 + 4.0**2 + 5.0**2
-    assert Jg([1., 2., 3., 4., 5.]) == val
-    rf = fadj.EnsembleReducedFunctional(Js, Controls, ensemble,
-                                        scatter_control=False,
-                                        gather_functional=Jg)
+    assert Jg([1.0, 2.0, 3.0, 4.0, 5.0]) == val
+    rf = fadj.EnsembleReducedFunctional(
+        Js, Controls, ensemble, scatter_control=False, gather_functional=Jg
+    )
     fadj.stop_annotating()
 
     solver_parameters = {
@@ -49,8 +49,7 @@ def test_ensemble_tao_solver():
         "tao_cg_type": "pr",
     }
 
-    solver = ensemble_tao_solver(rf, ensemble,
-                                 solver_parameters=solver_parameters)
+    solver = ensemble_tao_solver(rf, ensemble, solver_parameters=solver_parameters)
     solver.solve()
     its = solver.tao.getIterationNumber()
     assert its < 30

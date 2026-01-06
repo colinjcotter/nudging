@@ -13,10 +13,12 @@ model = ndg.Camsholm(100, nsteps, xpoints)
 model.setup()
 X_truth = model.allocate()
 _, u0 = X_truth[0].split()
-x, = fd.SpatialCoordinate(model.mesh)
+(x,) = fd.SpatialCoordinate(model.mesh)
 exp = fd.exp
-u0.interpolate(0.2*2/(exp(x-403./15.) + exp(-x+403./15.))
-               + 0.5*2/(exp(x-203./15.) + exp(-x+203./15.)))
+u0.interpolate(
+    0.2 * 2 / (exp(x - 403.0 / 15.0) + exp(-x + 403.0 / 15.0))
+    + 0.5 * 2 / (exp(x - 203.0 / 15.0) + exp(-x + 203.0 / 15.0))
+)
 N_obs = 50
 
 y_true = model.obs().dat.data[:]

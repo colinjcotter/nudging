@@ -28,17 +28,17 @@ class residual_resampling(object):
         N = weights.size
 
         if self.residual:
-            copies = np.array(np.floor(weights*N), dtype=int)
+            copies = np.array(np.floor(weights * N), dtype=int)
             L = N - np.sum(copies)
-            residual_weights = N*weights - copies
+            residual_weights = N * weights - copies
             residual_weights /= np.sum(residual_weights)
 
             for i in range(L):
-                u = self.rg.uniform(self.R, 0., 1.0)
+                u = self.rg.uniform(self.R, 0.0, 1.0)
                 u0 = u.dat.data[:]
                 cs = np.cumsum(residual_weights)
                 istar = -1
-                while cs[istar+1] < u0:
+                while cs[istar + 1] < u0:
                     istar += 1
                 copies[istar] += 1
 
@@ -51,10 +51,10 @@ class residual_resampling(object):
 
         else:  # systematic resampling
             cumsum_weight = np.cumsum(weights)
-            u = self.rg.uniform(self.R, 0., 1.0)
+            u = self.rg.uniform(self.R, 0.0, 1.0)
             u0 = u.dat.data[:]
 
-            ensembl_pos = (u0 + np.arange(N))/N
+            ensembl_pos = (u0 + np.arange(N)) / N
             s = np.zeros(N, dtype=int)
             i, j = 0, 0
             while i < N:

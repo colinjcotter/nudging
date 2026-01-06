@@ -17,22 +17,22 @@ x = fd.SpatialCoordinate(model.mesh)
 
 sin = fd.sin
 for i in range(nensemble[bfilter.ensemble_rank]):
-    a = model.rg.uniform(model.R, 0., 1.0)
-    q0_in = 0.1*(1+a)*sin(x[0])*sin(x[1])
+    a = model.rg.uniform(model.R, 0.0, 1.0)
+    q0_in = 0.1 * (1 + a) * sin(x[0]) * sin(x[1])
     q = bfilter.ensemble[i][0]
     q.interpolate(q0_in)
 
 
 def log_likelihood(y, Y):
-    ll = 0.5*(1/0.05**2)*((y[0]-Y[0])**2 + (y[1]-Y[1])**2)*fd.dx
+    ll = 0.5 * (1 / 0.05**2) * ((y[0] - Y[0]) ** 2 + (y[1] - Y[1]) ** 2) * fd.dx
     return ll
 
 
 # #Load data
-u1_exact = np.load('u_true_1.npy')
-u2_exact = np.load('u_true_2.npy')
-u_vel_1 = np.load('u_obs_true_1.npy')
-u_vel_2 = np.load('u_obs_true_2.npy')
+u1_exact = np.load("u_true_1.npy")
+u2_exact = np.load("u_true_2.npy")
+u_vel_1 = np.load("u_obs_true_1.npy")
+u_vel_2 = np.load("u_obs_true_2.npy")
 
 N_obs = u_vel_1.shape[0]
 
@@ -45,10 +45,12 @@ u_VOM.append(u2_VOM)
 u1_e_list = []
 u2_e_list = []
 for m in range(u_vel_1.shape[1]):
-    u1_e_shared = ndg.SharedArray(partition=nensemble,
-                                  comm=bfilter.subcommunicators.ensemble_comm)
-    u2_e_shared = ndg.SharedArray(partition=nensemble,
-                                  comm=bfilter.subcommunicators.ensemble_comm)
+    u1_e_shared = ndg.SharedArray(
+        partition=nensemble, comm=bfilter.subcommunicators.ensemble_comm
+    )
+    u2_e_shared = ndg.SharedArray(
+        partition=nensemble, comm=bfilter.subcommunicators.ensemble_comm
+    )
     u1_e_list.append(u1_e_shared)
     u2_e_list.append(u2_e_shared)
 
@@ -70,7 +72,7 @@ for k in range(N_obs):
         model.q0.assign(bfilter.ensemble[i][0])
         obsdata_1 = model.obs()[0].dat.data[:]
         obsdata_2 = model.obs()[1].dat.data[:]
-        for m in range(u_vel_1 .shape[1]):
+        for m in range(u_vel_1.shape[1]):
             u1_e_list[m].dlocal[i] = obsdata_1[m]
             u2_e_list[m].dlocal[i] = obsdata_2[m]
 

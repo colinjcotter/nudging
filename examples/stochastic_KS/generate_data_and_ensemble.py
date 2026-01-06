@@ -6,8 +6,9 @@ import nudging as ndg
 from nudging.models.stochastic_KS_CIP import KS_CIP
 
 import os
-os.makedirs('../../DA_KS/', exist_ok=True)
-os.makedirs('../../DA_KS/checkpoint_files/', exist_ok=True)
+
+os.makedirs("../../DA_KS/", exist_ok=True)
+os.makedirs("../../DA_KS/checkpoint_files/", exist_ok=True)
 """
 create some synthetic data/observation data at T_1 ---- T_Nobs
 Pick initial conditon
@@ -24,7 +25,7 @@ nsteps = 10
 params["nsteps"] = nsteps
 xpoints = 10
 params["xpoints"] = xpoints
-L = 10.
+L = 10.0
 params["L"] = L
 dt = 0.005
 params["dt"] = dt
@@ -33,15 +34,17 @@ params["nu"] = nu
 dc = 2.5
 params["dc"] = dc
 
-model = KS_CIP(nsteps, xpoints, seed=12353, lambdas=True,
-               dt=dt, nu=nu, dc=dc, L=L)
+model = KS_CIP(nsteps, xpoints, seed=12353, lambdas=True, dt=dt, nu=nu, dc=dc, L=L)
 model.setup()
 X_start = model.allocate()
-u_in = X_start[0] # u_initilization
-x, = fd.SpatialCoordinate(model.mesh)
+u_in = X_start[0]  # u_initilization
+(x,) = fd.SpatialCoordinate(model.mesh)
 
 # Setup initilization
-u_in.project(0.2*2/(fd.exp(x-403./15.) + fd.exp(-x+403./15.)) + 0.5*2/(fd.exp(x-203./15.)+fd.exp(-x+203./15.)))
+u_in.project(
+    0.2 * 2 / (fd.exp(x - 403.0 / 15.0) + fd.exp(-x + 403.0 / 15.0))
+    + 0.5 * 2 / (fd.exp(x - 203.0 / 15.0) + fd.exp(-x + 203.0 / 15.0))
+)
 
 
 print("Finding an initial state.")
@@ -49,7 +52,7 @@ for i in fd.ProgressBar("").iter(range(200)):
     model.randomize(X_start)
     model.run(X_start, X_start)  # run method for every time step
     u = fd.Function(model.Vdg)
-    u.rename('state')
+    u.rename("state")
     u.interpolate(model.un)
     truth_init.write(u)
 
@@ -57,8 +60,7 @@ print("generating ensemble.")
 
 Nensemble = 96  # size of the ensemble
 
-spread_steps = math.ceil(4./dt/nsteps)
-
+spread_steps = math.ceil(4.0 / dt / nsteps)
 
 
 X = model.allocate()
@@ -68,25 +70,24 @@ ndump = 20  # dump data
 p_dump = 0
 
 y_true = model.obs().dat.data[:]
-particle_in = np.zeros((y_true.size, Nensemble+1))
+particle_in = np.zeros((y_true.size, Nensemble + 1))
 
 
-with fd.CheckpointFile("../../DA_KS/ks_ensemble.h5", 'w') as afile:
+with fd.CheckpointFile("../../DA_KS/ks_ensemble.h5", "w") as afile:
     afile.save_mesh(model.mesh)
 
-    
     X[0].assign(X_start[0])
     for step in fd.ProgressBar("").iter(range(spread_steps)):
         model.randomize(X)
         model.run(X, X)
-    for i in range(Nensemble+1):
+    for i in range(Nensemble + 1):
         if i < Nensemble:
             print("Generating ensemble member", i)
         else:
             print("Generating 'true' value")
-        particle_in[:,i] = model.obs().dat.data[:]
+        particle_in[:, i] = model.obs().dat.data[:]
         u = fd.Function(model.Vdg)
-        u.rename('state')
+        u.rename("state")
         u.interpolate(model.un)
         particle_init.write(u)
 
@@ -109,7 +110,7 @@ for i in fd.ProgressBar("").iter(range(N_obs)):
     model.randomize(X)
     model.run(X, X)  # run method for every time step
     u = fd.Function(model.Vdg)
-    u.rename('state')
+    u.rename("state")
     u.interpolate(model.un)
     truth.write(u)
     y_true = model.obs().dat.data[:]
@@ -118,10 +119,11 @@ for i in fd.ProgressBar("").iter(range(N_obs)):
     y_true_data = np.save("y_true.npy", y_true_full)
     y_noise = np.random.normal(0.0, noise_var**0.5)
     y_obs = y_true + y_noise
-    y_obs_full[i,:] = y_obs
+    y_obs_full[i, :] = y_obs
 np.save("../../DA_KS/y_true.npy", y_true_full)
 np.save("../../DA_KS/y_obs.npy", y_obs_full)
 
 import pickle
-with open('params.pickle', 'wb') as handle:
+
+with open("params.pickle", "wb") as handle:
     pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)

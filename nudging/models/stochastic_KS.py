@@ -5,24 +5,33 @@ import numpy as np
 
 
 class KS(base_model):
-    def __init__(self, nsteps, xpoints, n=100, seed=12353, lambdas=False,
-                 dt=0.01, nu=0.02923, dc=0.01, L=10.):
+    def __init__(
+        self,
+        nsteps,
+        xpoints,
+        n=100,
+        seed=12353,
+        lambdas=False,
+        dt=0.01,
+        nu=0.02923,
+        dc=0.01,
+        L=10.0,
+    ):
 
         self.n = n
         self.nsteps = nsteps
         self.dt = dt
         self.seed = seed
-        self.nu = nu #  viscosity
-        self.dc = dc #  noise coefficient
-        self.L = L #  domain width
+        self.nu = nu  #  viscosity
+        self.dc = dc  #  noise coefficient
+        self.L = L  #  domain width
         self.xpoints = xpoints
         self.lambdas = lambdas  # include lambdas in allocate
 
     def setup(self, comm=MPI.COMM_WORLD):
-        mesh = fd.PeriodicIntervalMesh(self.n, self.L,
-                                           comm=comm, name="ksmesh")
+        mesh = fd.PeriodicIntervalMesh(self.n, self.L, comm=comm, name="ksmesh")
         self.mesh = mesh
-        x, = fd.SpatialCoordinate(mesh)
+        (x,) = fd.SpatialCoordinate(mesh)
 
         V = fd.FunctionSpace(mesh, "Hermite", 3)
         self.V = V
@@ -31,47 +40,44 @@ class KS(base_model):
         self.un = un
         unp1 = fd.Function(V)
         self.unp1 = unp1
-        uh = (un + unp1)/2
-        
+        uh = (un + unp1) / 2
+
         v = fd.TestFunction(V)
-        
+
         dt = 0.01
         dT = fd.Constant(dt)
 
         self.DG0 = fd.FunctionSpace(mesh, "DG", 0)
         dW = fd.Function(self.DG0)
         self.dW = dW
-        alpha = fd.Constant(1.0) # viscosity
-        beta = fd.Constant(0.02923) # hyperviscosity
-        gamma = fd.Constant(1.) # advection
-        dc = fd.Constant(0.001) # diffusion coefficient for noise
+        alpha = fd.Constant(1.0)  # viscosity
+        beta = fd.Constant(0.02923)  # hyperviscosity
+        gamma = fd.Constant(1.0)  # advection
+        dc = fd.Constant(0.001)  # diffusion coefficient for noise
         area = fd.CellVolume(mesh)
         dx = fd.dx
 
         eqn = (
-            v*(unp1 - un)*dx
-            - dT*alpha*v.dx(0)*uh.dx(0)*dx
-            + dT*beta*(
-                v.dx(0).dx(0)*uh.dx(0).dx(0)*dx
-            )
-            - dT*gamma*0.5*v.dx(0)*uh*uh*dx
-            - (dT/area)**0.5*dc*dW*v*dx
+            v * (unp1 - un) * dx
+            - dT * alpha * v.dx(0) * uh.dx(0) * dx
+            + dT * beta * (v.dx(0).dx(0) * uh.dx(0).dx(0) * dx)
+            - dT * gamma * 0.5 * v.dx(0) * uh * uh * dx
+            - (dT / area) ** 0.5 * dc * dW * v * dx
         )
 
         params = {
             "snes_atol": 1.0e-50,
             "snes_rtol": 1.0e-6,
             "snes_stol": 1.0e-50,
-            "ksp_type":"preonly",
-            "pc_type":"lu"
+            "ksp_type": "preonly",
+            "pc_type": "lu",
         }
 
-        #make the solver
+        # make the solver
         KSProb = fd.NonlinearVariationalProblem(eqn, unp1)
-        self.KSSolver = fd.NonlinearVariationalSolver(KSProb,
-                                                      solver_parameters=params)
+        self.KSSolver = fd.NonlinearVariationalSolver(KSProb, solver_parameters=params)
 
-        #stuff for interpolation to VOM
+        # stuff for interpolation to VOM
         CG3 = fd.FunctionSpace(mesh, "CG", 3)
         self.CG3 = CG3
         self.uout = fd.Function(CG3)
@@ -98,9 +104,9 @@ class KS(base_model):
         # do the timestepping
         for step in range(self.nsteps):
             # get noise variables and lambdas
-            self.dW.assign(self.X[step+1])
+            self.dW.assign(self.X[step + 1])
             if self.lambdas:
-                self.dW += self.X[step+1+self.nsteps]*(self.dt)**0.5
+                self.dW += self.X[step + 1 + self.nsteps] * (self.dt) ** 0.5
             # advance in time
             self.KSSolver.solve()
             # copy output to input
@@ -137,10 +143,9 @@ class KS(base_model):
         count = 0
         for i in range(self.nsteps):
             count += 1
-            X[count].assign(c1*X[count] + c2*rg.normal(
-                self.DG0, 0., 1.))
+            X[count].assign(c1 * X[count] + c2 * rg.normal(self.DG0, 0.0, 1.0))
             if g:
-                X[count] += gscale*g[count]
+                X[count] += gscale * g[count]
 
     def lambda_functional(self):
         nsteps = self.nsteps
@@ -160,8 +165,10 @@ class KS(base_model):
             lambda_step = self.X[nsteps + 1 + step]
             dW_step = self.X[1 + step]
             cv = fd.CellVolume(mesh)
-            dlfunc = fd.assemble((1/cv)*lambda_step**2*dt/2*dx
-                                 - (1/cv)*lambda_step*dW_step*dt**0.5*dx)
+            dlfunc = fd.assemble(
+                (1 / cv) * lambda_step**2 * dt / 2 * dx
+                - (1 / cv) * lambda_step * dW_step * dt**0.5 * dx
+            )
             if step == 0:
                 lfunc = dlfunc
             else:

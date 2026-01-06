@@ -17,24 +17,32 @@ from .resampling import residual_resampling
 from .diagnostics import compute_diagnostics, Stage, archive_diagnostics
 import numpy as np
 from .parallel_arrays import DistributedDataLayout1D, SharedArray, OwnedArray
-from firedrake.adjoint import pause_annotation, continue_annotation, \
-    get_working_tape, taylor_test
-from .global_optimisation import ensemble_tao_solver, \
-        ParameterisedEnsembleReducedFunctional
+from firedrake.adjoint import (
+    pause_annotation,
+    continue_annotation,
+    get_working_tape,
+    taylor_test,
+)
+from .global_optimisation import (
+    ensemble_tao_solver,
+    ParameterisedEnsembleReducedFunctional,
+)
 
 Print = PETSc.Sys.Print
+
+
 def logsumexp(x):
     c = x.max()
     return c + np.log(np.sum(np.exp(x - c)))
 
 
 def logsumexp_adjfloat(x, factor=fadj.AdjFloat(1.0)):
-    c = factor*x[0]
+    c = factor * x[0]
     for i in range(1, len(x)):
-        c = pmax(c, factor*x[i])
-    sumexp = pexp(factor*x[0] - c)
+        c = pmax(c, factor * x[i])
+    sumexp = pexp(factor * x[0] - c)
     for i in range(1, len(x)):
-        sumexp = sumexp + pexp(factor*x[i] - c)
+        sumexp = sumexp + pexp(factor * x[i] - c)
     c = c + plog(sumexp)
     return c
 
@@ -46,8 +54,7 @@ class base_filter(object, metaclass=ABCMeta):
     def __init__(self):
         pass
 
-    def setup(self, nensemble, model, resampler_seed=34343,
-              residual=False):
+    def setup(self, nensemble, model, resampler_seed=34343, residual=False):
         """
         Construct the ensemble
 
@@ -57,15 +64,14 @@ class base_filter(object, metaclass=ABCMeta):
         self.model = model
         self.nensemble = nensemble
         n_ensemble_partitions = len(nensemble)
-        self.nspace = int(MPI.COMM_WORLD.size/n_ensemble_partitions)
-        assert self.nspace*n_ensemble_partitions == MPI.COMM_WORLD.size
+        self.nspace = int(MPI.COMM_WORLD.size / n_ensemble_partitions)
+        assert self.nspace * n_ensemble_partitions == MPI.COMM_WORLD.size
 
         self.subcommunicators = fd.Ensemble(MPI.COMM_WORLD, self.nspace)
         # model needs to build the mesh in setup
         self.model.setup(self.subcommunicators.comm)
         if isinstance(nensemble, int):
-            nensemble = tuple(nensemble for _ in
-                              range(self.subcommunicators.comm.size))
+            nensemble = tuple(nensemble for _ in range(self.subcommunicators.comm.size))
 
         # setting up ensemble
         self.ensemble_rank = self.subcommunicators.ensemble_comm.rank
@@ -84,24 +90,21 @@ class base_filter(object, metaclass=ABCMeta):
 
         # Shared array for the potentials
         ecomm = self.subcommunicators.ensemble_comm
-        self.potential_arr = SharedArray(partition=self.nensemble, dtype=float,
-                                         comm=ecomm)
+        self.potential_arr = SharedArray(
+            partition=self.nensemble, dtype=float, comm=ecomm
+        )
 
         # Owned array for the resampling protocol
-        self.s_arr = OwnedArray(size=self.nglobal, dtype=int,
-                                comm=ecomm,
-                                owner=0)
+        self.s_arr = OwnedArray(size=self.nglobal, dtype=int, comm=ecomm, owner=0)
         # data layout for coordinating resampling communication
-        self.layout = DistributedDataLayout1D(self.nensemble,
-                                              comm=ecomm)
+        self.layout = DistributedDataLayout1D(self.nensemble, comm=ecomm)
 
         # offset_list
         self.offset_list = []
         for i_rank in range(len(self.nensemble)):
             self.offset_list.append(sum(self.nensemble[:i_rank]))
         # a resampling method
-        self.resampler = residual_resampling(seed=resampler_seed,
-                                             residual=residual)
+        self.resampler = residual_resampling(seed=resampler_seed, residual=residual)
 
     def index2rank(self, index):
         for rank in range(len(self.offset_list)):
@@ -119,15 +122,14 @@ class base_filter(object, metaclass=ABCMeta):
             if self.ensemble_rank == 0:
                 potentials = self.potential_arr.data()
                 # renormalise
-                weights = np.exp(-dtheta*potentials
-                                 - logsumexp(-dtheta*potentials))
-                assert np.abs(np.sum(weights)-1) < 1.0e-8
-                self.ess = 1/np.sum(weights**2)
+                weights = np.exp(-dtheta * potentials - logsumexp(-dtheta * potentials))
+                assert np.abs(np.sum(weights) - 1) < 1.0e-8
+                self.ess = 1 / np.sum(weights**2)
                 if self.verbose:
-                    PETSc.Sys.Print("ESS "
-                                    + str(100*self.ess/np.sum(self.nensemble))
-                                    + "%")
-            # compute resampling protocol on rank 0
+                    PETSc.Sys.Print(
+                        "ESS " + str(100 * self.ess / np.sum(self.nensemble)) + "%"
+                    )
+                # compute resampling protocol on rank 0
                 s = self.resampler.resample(weights, self.model)
                 for i in range(self.nglobal):
                     self.s_arr[i] = s[i]
@@ -140,8 +142,7 @@ class base_filter(object, metaclass=ABCMeta):
         mpi_requests = []
 
         for ilocal in range(self.nensemble[self.ensemble_rank]):
-            iglobal = self.layout.transform_index(ilocal, itype='l',
-                                                  rtype='g')
+            iglobal = self.layout.transform_index(ilocal, itype="l", rtype="g")
             # add to send list
             targets = []
             for j in range(self.s_arr.size):
@@ -154,13 +155,13 @@ class base_filter(object, metaclass=ABCMeta):
                         request_send = self.subcommunicators.isend(
                             self.ensemble[ilocal][k],
                             dest=self.index2rank(target),
-                            tag=1000*target+k)
+                            tag=1000 * target + k,
+                        )
                         mpi_requests.extend(request_send)
                 else:
                     request_send = self.subcommunicators.isend(
-                        self.ensemble[ilocal],
-                        dest=self.index2rank(target),
-                        tag=target)
+                        self.ensemble[ilocal], dest=self.index2rank(target), tag=target
+                    )
                     mpi_requests.extend(request_send)
 
             source_rank = self.index2rank(s_copy[iglobal])
@@ -169,13 +170,13 @@ class base_filter(object, metaclass=ABCMeta):
                     request_recv = self.subcommunicators.irecv(
                         self.new_ensemble[ilocal][k],
                         source=source_rank,
-                        tag=1000*iglobal+k)
+                        tag=1000 * iglobal + k,
+                    )
                     mpi_requests.extend(request_recv)
             else:
                 request_recv = self.subcommunicators.irecv(
-                    self.new_ensemble[ilocal],
-                    source=source_rank,
-                    tag=iglobal)
+                    self.new_ensemble[ilocal], source=source_rank, tag=iglobal
+                )
                 mpi_requests.extend(request_recv)
 
         MPI.Request.Waitall(mpi_requests)
@@ -204,7 +205,7 @@ class sim_filter(base_filter):
     def assimilation_step(self, s):
         for i in range(self.nensemble[self.ensemble_rank]):
             # set the particle value to the global index
-            self.ensemble[i][0].assign(self.offset_list[self.ensemble_rank]+i)
+            self.ensemble[i][0].assign(self.offset_list[self.ensemble_rank] + i)
         self.parallel_resample(s=s)
 
 
@@ -225,17 +226,26 @@ class bootstrap_filter(base_filter):
             Y = self.model.obs()
             self.potential_arr.dlocal[i] = fd.assemble(log_likelihood(y, Y))
         self.parallel_resample()
-        compute_diagnostics(diagnostics,
-                            self.ensemble,
-                            stage=Stage.AFTER_ASSIMILATION_STEP,
-                            descriptor=None)
+        compute_diagnostics(
+            diagnostics,
+            self.ensemble,
+            stage=Stage.AFTER_ASSIMILATION_STEP,
+            descriptor=None,
+        )
         archive_diagnostics(diagnostics)
 
 
 class jittertemp_filter(base_filter):
-    def __init__(self, n_jitt, delta,
-                 verbose=0, MALA=False, nudging=False,
-                 visualise_tape=False, sigma=0.1):
+    def __init__(
+        self,
+        n_jitt,
+        delta,
+        verbose=0,
+        MALA=False,
+        nudging=False,
+        visualise_tape=False,
+        sigma=0.1,
+    ):
         self.delta = delta
         self.verbose = verbose
         self.MALA = MALA
@@ -246,43 +256,43 @@ class jittertemp_filter(base_filter):
         self.sigma = sigma  # nudging parameter
 
         if MALA:
-            PETSc.Sys.Print("Warning, we are not currently "
-                            + "computing the Metropolis correction for MALA."
-                            + " Choose a small delta.")
+            PETSc.Sys.Print(
+                "Warning, we are not currently "
+                + "computing the Metropolis correction for MALA."
+                + " Choose a small delta."
+            )
 
     def setup(self, nensemble, model, resampler_seed=34343, residual=False):
         super(jittertemp_filter, self).setup(
-            nensemble, model, resampler_seed=resampler_seed,
-            residual=residual)
+            nensemble, model, resampler_seed=resampler_seed, residual=residual
+        )
         # Owned array for sending dtheta
         ecomm = self.subcommunicators.ensemble_comm
-        self.dtheta_arr = OwnedArray(size=self.nglobal, dtype=float,
-                                     comm=ecomm, owner=0)
+        self.dtheta_arr = OwnedArray(
+            size=self.nglobal, dtype=float, comm=ecomm, owner=0
+        )
         # Shared array for minimum potential values
-        self.phi_min = SharedArray(partition=self.nensemble, dtype=float,
-                                         comm=ecomm) # Shared array for maximum potential values
-        self.phi_max = SharedArray(partition=self.nensemble, dtype=float,
-                                         comm=ecomm)
-         # Shared array for optimize potential values
-        self.phi_opt = SharedArray(partition=self.nensemble, dtype=float,
-                                         comm=ecomm)
+        self.phi_min = SharedArray(
+            partition=self.nensemble, dtype=float, comm=ecomm
+        )  # Shared array for maximum potential values
+        self.phi_max = SharedArray(partition=self.nensemble, dtype=float, comm=ecomm)
+        # Shared array for optimize potential values
+        self.phi_opt = SharedArray(partition=self.nensemble, dtype=float, comm=ecomm)
         # Owned array for sending chosen potential values phi star
-        self.phi_star = OwnedArray(size=self.nglobal, dtype=float,
-                                     comm=ecomm, owner=0)
+        self.phi_star = OwnedArray(size=self.nglobal, dtype=float, comm=ecomm, owner=0)
 
     def adaptive_dtheta(self, dtheta, theta, ess_tol):
         self.potential_arr.synchronise(root=0)
         if self.ensemble_rank == 0:
             potentials = self.potential_arr.data()
-            ess = 0.
-            while ess < ess_tol*sum(self.nensemble):
+            ess = 0.0
+            while ess < ess_tol * sum(self.nensemble):
                 # renormalise
-                weights = np.exp(-dtheta*potentials
-                                 - logsumexp(-dtheta*potentials))
+                weights = np.exp(-dtheta * potentials - logsumexp(-dtheta * potentials))
                 weights /= np.sum(weights)
-                ess = 1/np.sum(weights**2)
-                if ess < ess_tol*sum(self.nensemble):
-                    dtheta = 0.5*dtheta
+                ess = 1 / np.sum(weights**2)
+                if ess < ess_tol * sum(self.nensemble):
+                    dtheta = 0.5 * dtheta
 
             # abuse owned array to broadcast dtheta
             for i in range(self.nglobal):
@@ -315,34 +325,29 @@ class jittertemp_filter(base_filter):
         for i in range(N):  # build functionals for each particle
             for step in range(nsteps):
                 #  adding Lambda to the controls for this step
-                self.Control_inputs[step].append(
-                    self.ensemble[i][nsteps+1+step])
-                Controls[step].append(fadj.Control(
-                    self.ensemble[i][nsteps+1+step]))
+                self.Control_inputs[step].append(self.ensemble[i][nsteps + 1 + step])
+                Controls[step].append(fadj.Control(self.ensemble[i][nsteps + 1 + step]))
                 #  adding model state to the parameters
-                self.Parameter_inputs[step].append(
-                    self.ensemble[i][0])
-                Parameters[step].append(
-                    fadj.Control(self.ensemble[i][0]))
+                self.Parameter_inputs[step].append(self.ensemble[i][0])
+                Parameters[step].append(fadj.Control(self.ensemble[i][0]))
                 #  adding noise values to the parameters
                 for step2 in range(nsteps):
-                    self.Parameter_inputs[step].append(
-                        self.ensemble[i][1+step2])
-                    Parameters[step].append(
-                        fadj.Control(self.ensemble[i][1+step2]))
+                    self.Parameter_inputs[step].append(self.ensemble[i][1 + step2])
+                    Parameters[step].append(fadj.Control(self.ensemble[i][1 + step2]))
 
                     #  adding Lambda for other steps as parameters
                     for step2 in range(nsteps):
                         if step2 == step:
                             continue
                         self.Parameter_inputs[step].append(
-                            self.ensemble[i][nsteps+1+step2])
-                        Parameters[step].append(fadj.Control(
-                            self.ensemble[i][nsteps+1+step2]))
+                            self.ensemble[i][nsteps + 1 + step2]
+                        )
+                        Parameters[step].append(
+                            fadj.Control(self.ensemble[i][nsteps + 1 + step2])
+                        )
 
             # tape model for local particle i
-            self.model.run(self.ensemble[i],
-                           self.new_ensemble[i])
+            self.model.run(self.ensemble[i], self.new_ensemble[i])
             Y = self.model.obs()
             nudge_J = fd.assemble(log_likelihood(y, Y))
             nudge_J += self.model.lambda_functional()
@@ -372,20 +377,21 @@ class jittertemp_filter(base_filter):
         # we only update lambdas[step] on timestep step
         for step in range(nsteps):
             # build the RF that maps from the Js to the BigJ
-            BigJ = -2*logsumexp_adjfloat(BigJ_floats,
-                                         factor=-1.0)
+            BigJ = -2 * logsumexp_adjfloat(BigJ_floats, factor=-1.0)
             BigJ += logsumexp_adjfloat(BigJ_floats, factor=-2.0)
             for Jfloat in BigJ_floats:
-                BigJ += Jfloat*self.sigma
+                BigJ += Jfloat * self.sigma
             BigJ_Controls = [fadj.Control(fl) for fl in BigJ_floats]
             BigJhat = fadj.ReducedFunctional(BigJ, BigJ_Controls)
 
-            assert len(Parameters[step]) == \
-                len(self.Parameter_inputs[step])
+            assert len(Parameters[step]) == len(self.Parameter_inputs[step])
             rf = ParameterisedEnsembleReducedFunctional(
-                Js, Controls[step], Parameters[step],
+                Js,
+                Controls[step],
+                Parameters[step],
                 self.subcommunicators,
-                gather_functional=BigJhat)
+                gather_functional=BigJhat,
+            )
             for input0 in self.Control_inputs[step]:
                 input0.assign(1.0)
 
@@ -395,16 +401,22 @@ class jittertemp_filter(base_filter):
 
                 rf(self.Control_inputs[step])
                 Drf = rf.derivative()
-                dJdm = 0.
+                dJdm = 0.0
                 pert = self.Control_inputs[step]
                 for i, D in enumerate(Drf):
-                    dJdm += fd.assemble(fd.inner(D, pert[i])*fd.dx)
-                dJdm = self.subcommunicators.ensemble_comm.allreduce(
-                    dJdm, op=MPI.SUM)
-                assert taylor_test(
-                    rf, self.Control_inputs[step],
-                    self.Control_inputs[step], dJdm=dJdm) > 1.9
+                    dJdm += fd.assemble(fd.inner(D, pert[i]) * fd.dx)
+                dJdm = self.subcommunicators.ensemble_comm.allreduce(dJdm, op=MPI.SUM)
+                assert (
+                    taylor_test(
+                        rf,
+                        self.Control_inputs[step],
+                        self.Control_inputs[step],
+                        dJdm=dJdm,
+                    )
+                    > 1.9
+                )
                 from sys import exit
+
                 exit()
 
             self.rfs.append(rf)
@@ -412,16 +424,22 @@ class jittertemp_filter(base_filter):
                 params = self.tao_params
             elif isinstance(self.tao_params, list):
                 params = self.tao_params[step]
-            
-            solver = ensemble_tao_solver(rf, self.subcommunicators.comm,
-                                         solver_parameters=params)
+
+            solver = ensemble_tao_solver(
+                rf, self.subcommunicators.comm, solver_parameters=params
+            )
             self.Jhat_solvers.append(solver)
 
-    def assimilation_step(self, y, log_likelihood,
-                          diagnostics=[],
-                          ess_tol=0.8, tao_params=None,
-                          taylor_test=False):
-        #self.y = y
+    def assimilation_step(
+        self,
+        y,
+        log_likelihood,
+        diagnostics=[],
+        ess_tol=0.8,
+        tao_params=None,
+        taylor_test=False,
+    ):
+        # self.y = y
         if not tao_params:
             self.tao_params = {
                 "tao_type": "lmvm",
@@ -455,8 +473,7 @@ class jittertemp_filter(base_filter):
                 scale_controls.append(fadj.Control(s))
             if self.verbose > 0:
                 PETSc.Sys.Print("taping forward model for Nudging")
-            self.model.run(self.ensemble[0],
-                            self.new_ensemble[0], s=self.scale)
+            self.model.run(self.ensemble[0], self.new_ensemble[0], s=self.scale)
             # set the controls
             if isinstance(y, fd.Function):
                 m = self.model.controls() + [fadj.Control(y)] + scale_controls
@@ -472,7 +489,7 @@ class jittertemp_filter(base_filter):
                 # functional for nudging
                 self.Jhat = []
                 self.Jhat_solvers = []
-                for step in range(nsteps+1, nsteps*2+1):
+                for step in range(nsteps + 1, nsteps * 2 + 1):
                     # 0 component is state
                     # 1 .. step is noise
                     # step + 1 .. 2*step is lambdas
@@ -480,9 +497,7 @@ class jittertemp_filter(base_filter):
                     # we only update lambdas[step] on timestep step
                     cpts = [step]
 
-                    fnl = fadj.ReducedFunctional(nudge_J,
-                                                 m,
-                                                 derivative_components=cpts)
+                    fnl = fadj.ReducedFunctional(nudge_J, m, derivative_components=cpts)
 
                     self.Jhat.append(fnl)
             if self.visualise_tape:
@@ -498,8 +513,9 @@ class jittertemp_filter(base_filter):
                 for fnl in self.Jhat:
                     # testing the derivative
                     problem = MinimizationProblem(fnl)
-                    solver = TAOSolver(problem, self.tao_params,
-                                       comm=self.subcommunicators.comm)
+                    solver = TAOSolver(
+                        problem, self.tao_params, comm=self.subcommunicators.comm
+                    )
                     self.Jhat_solvers.append(solver)
 
         if self.nudging:
@@ -512,8 +528,8 @@ class jittertemp_filter(base_filter):
                 self.proposal_ensemble[i][0].assign(self.ensemble[i][0])
                 # zero the noise and lambdas in preparation for nudging
                 for step in range(nsteps):
-                    self.ensemble[i][step+1].assign(0.)  # the noise
-                    self.ensemble[i][nsteps+step+1].assign(0.)  # the nudging
+                    self.ensemble[i][step + 1].assign(0.0)  # the noise
+                    self.ensemble[i][nsteps + step + 1].assign(0.0)  # the nudging
 
             # Stage 1: nudging one step at a time
             for step in range(nsteps):
@@ -523,80 +539,88 @@ class jittertemp_filter(base_filter):
                     # get the randomised noise for this step
                     self.model.randomize(self.new_ensemble[i])  # not efficient!
                     # just copy in the current component
-                    self.ensemble[i][1+step].assign(self.new_ensemble[i][1+step])
+                    self.ensemble[i][1 + step].assign(self.new_ensemble[i][1 + step])
                     # update with current noise and lambda values
                     # (prepare the scale values first)
                     for j in range(nsteps):
                         self.scale[j].assign(1.0)
-                    self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    self.Jhat[step](self.ensemble[i] + [y] + self.scale)
 
                     # get the minimum over current lambda
                     if self.verbose > 1:
-                        PETSc.Sys.Print("Solving for Lambda step ", step,
-                                        "local ensemble member ", i)
+                        PETSc.Sys.Print(
+                            "Solving for Lambda step ",
+                            step,
+                            "local ensemble member ",
+                            i,
+                        )
                     Xopt = fadj.minimize(self.Jhat[step])
                     # place the optimal value of lambda into ensemble
-                    self.ensemble[i][nsteps+1+step].assign(Xopt[nsteps+1+step])
+                    self.ensemble[i][nsteps + 1 + step].assign(Xopt[nsteps + 1 + step])
                     # store the optimal value
-                    phi_min_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    phi_min_i = self.Jhat[step](self.ensemble[i] + [y] + self.scale)
                     phi_min_loc.append(phi_min_i)
                     self.phi_min.dlocal[i] = phi_min_i
                     self.scale[step].assign(-1.0)
-                    phi_max_i = self.Jhat[step](self.ensemble[i]+[y]+self.scale)
+                    phi_max_i = self.Jhat[step](self.ensemble[i] + [y] + self.scale)
                     self.phi_max.dlocal[i] = phi_max_i
                     phi_max_loc.append(phi_max_i)
-                    self.scale[step].assign(1.0) # reset the scale values
+                    self.scale[step].assign(1.0)  # reset the scale values
                 self.phi_min.synchronise()
                 self.phi_max.synchronise()
                 self.ess_count = 0
 
                 # Stage 2: find the phi values that minimise phis subject to ESS > tol
-                #with PETSc.Log.Event("Stage 2: Global Optimization"):
+                # with PETSc.Log.Event("Stage 2: Global Optimization"):
                 if self.ensemble_rank == 0:
                     phi_max = self.phi_max.data()
                     phi_min = self.phi_min.data()
-                    #Print('phi_val', np.stack((phi_min, phi_max, phi_max - phi_min)).T)
-                    
+                    # Print('phi_val', np.stack((phi_min, phi_max, phi_max - phi_min)).T)
+
                     # Objective: minimize negative ESS
                     def maximizeESS(phi):
                         weights = np.exp(-phi - logsumexp(-phi))
                         weights /= np.sum(weights)
-                        ess = 1/np.sum(weights**2)
-                        return -ess + np.sum(phi)/100 # To maximize ESS
+                        ess = 1 / np.sum(weights**2)
+                        return -ess + np.sum(phi) / 100  # To maximize ESS
 
                     # Define bounds
-                    assert np.all(phi_min <= phi_max), np.stack((phi_min, phi_max, phi_min - phi_max)).T
+                    assert np.all(phi_min <= phi_max), np.stack(
+                        (phi_min, phi_max, phi_min - phi_max)
+                    ).T
                     lower_bounds = phi_min
                     upper_bounds = phi_max
 
-                    bounds = Bounds(phi_min, 2*phi_max)
+                    bounds = Bounds(phi_min, 2 * phi_max)
+
                     # Initial guess: midpoint
                     def phi_init(delta):
-                        return delta*phi_min + (1-delta)*phi_max
-                    #x0 = phi_min
+                        return delta * phi_min + (1 - delta) * phi_max
+
+                    # x0 = phi_min
                     # Run the optimization
                     if self.verbose > 1:
                         Print("Minimising global functional")
 
                     result = minimize(
-                                maximizeESS,
-                                x0 = phi_init(0.5),
-                                method='L-BFGS-B',
-                                bounds=bounds,
-                                #hess=lambda x: csc_matrix((len(x), len(x))),  # zero Hessian
-                                #options={'verbose': 1, 'maxiter': 10000}
-                            )
+                        maximizeESS,
+                        x0=phi_init(0.5),
+                        method="L-BFGS-B",
+                        bounds=bounds,
+                        # hess=lambda x: csc_matrix((len(x), len(x))),  # zero Hessian
+                        # options={'verbose': 1, 'maxiter': 10000}
+                    )
                     # Use optimized phi
                     phi_opt = result.x
-                    a = np.stack((np.arange(len(phi_min)), phi_min,phi_opt, phi_max)).T
+                    a = np.stack((np.arange(len(phi_min)), phi_min, phi_opt, phi_max)).T
                     if self.verbose > 2:
                         Print("Optimized phi")
-                        #Print(a)
+                        # Print(a)
                     if self.verbose > 1:
                         weights = np.exp(-phi_opt - logsumexp(-phi_opt))
                         weights /= np.sum(weights)
-                        ess = 1/np.sum(weights**2)
-                        self.ess_count  = ess
+                        ess = 1 / np.sum(weights**2)
+                        self.ess_count = ess
                         Print("Maximum ESS achieved:", ess)
 
                     for i in range(self.nglobal):
@@ -604,57 +628,65 @@ class jittertemp_filter(base_filter):
                 self.phi_star.synchronise()
 
                 # Stage 3: find the scaling of lambda to achieve phi_star
-                #with PETSc.Log.Event("Stage 3: Lambda Rescaling"):
+                # with PETSc.Log.Event("Stage 3: Lambda Rescaling"):
                 if self.verbose > 1:
                     Print("Rescaling lambda to optimal value")
                 for i in range(self.nensemble[self.ensemble_rank]):
-                    ig = self.layout.transform_index(i, itype='l', rtype='g')
+                    ig = self.layout.transform_index(i, itype="l", rtype="g")
                     phi_star = self.phi_star.data()[ig]
 
                     if abs(phi_star - phi_min_loc[i]) < 1.0e-8:
                         # do nothing because we are at the minimum
                         continue
                     elif phi_star < phi_min_loc[i]:
-                        raise ValueError('bad phi_star value')
+                        raise ValueError("bad phi_star value")
                     else:
+
                         def func(s):
                             self.scale[step].assign(s)
-                            val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+                            val = self.Jhat[step](self.ensemble[i] + [y] + self.scale)
                             val = val - phi_star
                             self.scale[step].assign(1.0)
                             return val
 
-                        b = 0.
+                        b = 0.0
                         while func(b) < 0:
                             b -= 1
                         # get the scale value
-                        sol = root_scalar(func, bracket=[b, b+1.],   method="brentq").root
+                        sol = root_scalar(
+                            func, bracket=[b, b + 1.0], method="brentq"
+                        ).root
 
-                        lambda_step = self.ensemble[i][nsteps+step+1]
-                        lambda_step.assign(sol*lambda_step)
+                        lambda_step = self.ensemble[i][nsteps + step + 1]
+                        lambda_step.assign(sol * lambda_step)
 
                         self.scale[step].assign(1.0)
-                        val = self.Jhat[step](self.ensemble[i]+[y] + self.scale)
+                        val = self.Jhat[step](self.ensemble[i] + [y] + self.scale)
 
-                        assert abs(val - phi_star < 1.0e-3) , f'val:{val}, phi star:{phi_star}, step:{step}, sol:{sol}'
-
+                        assert abs(
+                            val - phi_star < 1.0e-3
+                        ), f"val:{val}, phi star:{phi_star}, step:{step}, sol:{sol}"
 
             PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
-            compute_diagnostics(diagnostics,
-                                self.ensemble,
-                                descriptor=None,
-                                stage=Stage.AFTER_NUDGING,
-                                run=lambda x, y: self.model.run(x, y, s=self.scale),
-                                new_ensemble=self.new_ensemble)
+            compute_diagnostics(
+                diagnostics,
+                self.ensemble,
+                descriptor=None,
+                stage=Stage.AFTER_NUDGING,
+                run=lambda x, y: self.model.run(x, y, s=self.scale),
+                new_ensemble=self.new_ensemble,
+            )
 
             self.model.lambdas = False
-            compute_diagnostics(diagnostics,
-                                self.ensemble,
-                                descriptor=None,
-                                stage=Stage.WITHOUT_LAMBDAS,
-                                run=self.model.run,
-                                new_ensemble=self.new_ensemble)
+            compute_diagnostics(
+                diagnostics,
+                self.ensemble,
+                descriptor=None,
+                stage=Stage.WITHOUT_LAMBDAS,
+                run=self.model.run,
+                new_ensemble=self.new_ensemble,
+            )
             self.model.lambdas = True
         else:
             for i in range(N):
@@ -663,7 +695,7 @@ class jittertemp_filter(base_filter):
 
         theta = 0.0
         self.temper_count = 0
-        while theta < 1.:  # Tempering loop
+        while theta < 1.0:  # Tempering loop
             dtheta = 1.0 - theta
 
             # Compute initial potentials
@@ -671,11 +703,9 @@ class jittertemp_filter(base_filter):
                 # put result of forward model into new_ensemble
                 self.model.run(self.ensemble[i], self.new_ensemble[i])
                 Y = self.model.obs()
-                self.potential_arr.dlocal[i] = \
-                    fd.assemble(log_likelihood(y, Y))
+                self.potential_arr.dlocal[i] = fd.assemble(log_likelihood(y, Y))
                 if self.nudging:
-                    self.potential_arr.dlocal[i] += \
-                        self.model.lambda_functional()
+                    self.potential_arr.dlocal[i] += self.model.lambda_functional()
 
             # adaptive dtheta choice
             dtheta = self.adaptive_dtheta(dtheta, theta, ess_tol)
@@ -686,12 +716,14 @@ class jittertemp_filter(base_filter):
 
             # resampling BEFORE jittering
             self.parallel_resample(dtheta)
-            compute_diagnostics(diagnostics,
-                                self.ensemble,
-                                descriptor=(dtheta),
-                                stage=Stage.AFTER_TEMPER_RESAMPLE,
-                                run=self.model.run,
-                                new_ensemble=self.new_ensemble)
+            compute_diagnostics(
+                diagnostics,
+                self.ensemble,
+                descriptor=(dtheta),
+                stage=Stage.AFTER_TEMPER_RESAMPLE,
+                run=self.model.run,
+                new_ensemble=self.new_ensemble,
+            )
             self.temper_count += 1
 
             for jitt_step in range(self.n_jitt):  # Jittering loop
@@ -701,11 +733,9 @@ class jittertemp_filter(base_filter):
                 for i in range(N):
                     if jitt_step == 0:
                         # Compute initial potentials
-                        self.model.run(self.ensemble[i],
-                                       self.new_ensemble[i])
+                        self.model.run(self.ensemble[i], self.new_ensemble[i])
                         Y = self.model.obs()
-                        potentials[i] = fd.assemble(
-                            log_likelihood(y, Y))
+                        potentials[i] = fd.assemble(log_likelihood(y, Y))
                         if self.nudging:
                             potentials[i] += self.model.lambda_functional()
                         potentials[i] *= theta
@@ -713,35 +743,34 @@ class jittertemp_filter(base_filter):
                     if self.MALA:
                         # run the model and get the functional value with
                         # ensemble[i]
-                        self.Jhat_dW(self.ensemble[i]+[y])
+                        self.Jhat_dW(self.ensemble[i] + [y])
                         # use the taped model to get the derivative
                         g = self.Jhat_dW.derivative()
                         # proposal
-                        self.model.copy(self.ensemble[i],
-                                        self.proposal_ensemble[i])
+                        self.model.copy(self.ensemble[i], self.proposal_ensemble[i])
                         delta = self.delta
-                        self.model.randomize(self.proposal_ensemble[i],
-                                             (
-                                                 (2-delta)/(2+delta)),
-                                             (
-                                                 (8*delta)**0.5/(2+delta)),
-                                             gscale=-2*delta/(2+delta), g=g)
+                        self.model.randomize(
+                            self.proposal_ensemble[i],
+                            ((2 - delta) / (2 + delta)),
+                            ((8 * delta) ** 0.5 / (2 + delta)),
+                            gscale=-2 * delta / (2 + delta),
+                            g=g,
+                        )
                     else:
                         # proposal PCN
-                        self.model.copy(self.ensemble[i],
-                                        self.proposal_ensemble[i])
+                        self.model.copy(self.ensemble[i], self.proposal_ensemble[i])
                         delta = self.delta
-                        self.model.randomize(self.proposal_ensemble[i],
-                                             (2-delta)/(2+delta),
-                                             (8*delta)**0.5/(2+delta))
+                        self.model.randomize(
+                            self.proposal_ensemble[i],
+                            (2 - delta) / (2 + delta),
+                            (8 * delta) ** 0.5 / (2 + delta),
+                        )
                     # put result of forward model into new_ensemble
-                    self.model.run(self.proposal_ensemble[i],
-                                   self.new_ensemble[i])
+                    self.model.run(self.proposal_ensemble[i], self.new_ensemble[i])
 
                     # particle potentials
                     Y = self.model.obs()
-                    new_potentials[i] = fd.assemble(
-                        log_likelihood(y, Y))
+                    new_potentials[i] = fd.assemble(log_likelihood(y, Y))
                     if self.nudging:
                         new_potentials[i] += self.model.lambda_functional()
                     new_potentials[i] *= theta
@@ -750,31 +779,32 @@ class jittertemp_filter(base_filter):
                     if self.MALA:
                         p_accept = 1
                     else:
-                        p_accept = min(1,
-                                       np.exp(potentials[i]
-                                              - new_potentials[i]))
+                        p_accept = min(1, np.exp(potentials[i] - new_potentials[i]))
                         # accept or reject tool
-                        u = self.model.rg.uniform(self.model.R, 0., 1.0)
+                        u = self.model.rg.uniform(self.model.R, 0.0, 1.0)
                         if u.dat.data[:] < p_accept:
                             potentials[i] = new_potentials[i]
-                            self.model.copy(self.proposal_ensemble[i],
-                                            self.ensemble[i])
-                compute_diagnostics(diagnostics,
-                                    self.ensemble,
-                                    descriptor=(dtheta, jitt_step),
-                                    stage=Stage.AFTER_ONE_JITTER_STEP,
-                                    run=self.model.run,
-                                    new_ensemble=self.new_ensemble)
+                            self.model.copy(self.proposal_ensemble[i], self.ensemble[i])
+                compute_diagnostics(
+                    diagnostics,
+                    self.ensemble,
+                    descriptor=(dtheta, jitt_step),
+                    stage=Stage.AFTER_ONE_JITTER_STEP,
+                    run=self.model.run,
+                    new_ensemble=self.new_ensemble,
+                )
 
-            compute_diagnostics(diagnostics,
-                                self.ensemble,
-                                descriptor=(dtheta),
-                                stage=Stage.AFTER_JITTERING,
-                                run=self.model.run,
-                                new_ensemble=self.new_ensemble)
+            compute_diagnostics(
+                diagnostics,
+                self.ensemble,
+                descriptor=(dtheta),
+                stage=Stage.AFTER_JITTERING,
+                run=self.model.run,
+                new_ensemble=self.new_ensemble,
+            )
 
         if self.verbose > 0:
-            PETSc.Sys.Print(str(self.temper_count)+" tempering steps")
+            PETSc.Sys.Print(str(self.temper_count) + " tempering steps")
             PETSc.Sys.Print("Advancing ensemble")
         for i in range(N):
             self.model.run(self.ensemble[i], self.ensemble[i])
@@ -782,8 +812,10 @@ class jittertemp_filter(base_filter):
             PETSc.Sys.Print("assimilation step complete")
         # trigger garbage cleanup
         PETSc.garbage_cleanup(PETSc.COMM_SELF)
-        compute_diagnostics(diagnostics,
-                            self.ensemble,
-                            descriptor=None,
-                            stage=Stage.AFTER_ASSIMILATION_STEP)
+        compute_diagnostics(
+            diagnostics,
+            self.ensemble,
+            descriptor=None,
+            stage=Stage.AFTER_ASSIMILATION_STEP,
+        )
         archive_diagnostics(diagnostics)

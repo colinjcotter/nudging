@@ -16,8 +16,7 @@ def parallel_resample():
     s = [4, 3, 7, 0, 1, 5, 2, 6, 9, 8]
     simfilter.assimilation_step(s=s)
     for i in range(len(simfilter.ensemble)):
-        iglobal = simfilter.layout.transform_index(i, itype='l',
-                                                   rtype='g')
+        iglobal = simfilter.layout.transform_index(i, itype="l", rtype="g")
         s_val = simfilter.s_copy[iglobal]
         e_val = simfilter.ensemble[i][0]
         assert s_val - int(e_val.dat.data[:].min()) == 0
