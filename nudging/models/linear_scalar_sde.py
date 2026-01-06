@@ -2,6 +2,9 @@ import firedrake as fd
 import firedrake.adjoint as fadj
 from nudging import base_model
 from pyop2.mpi import MPI
+from firedrake.petsc import PETSc
+
+Print = PETSc.Sys.Print
 
 
 class LSDEModel(base_model):
@@ -19,12 +22,18 @@ class LSDEModel(base_model):
         self.seed = seed
 
     def setup(self, comm=MPI.COMM_WORLD):
+        """
+        Sets up the mesh and function spaces for the solver.
+        Sets up the Vertex-only mesh for observations.
+        """
         self.mesh = fd.UnitIntervalMesh(1, comm=comm)
 
-        self.R = fd.FunctionSpace(self.mesh, "R", 0)
-        self.V = fd.FunctionSpace(self.mesh, "DG", 0)
-        self.u = fd.Function(self.V)
-        self.dW = fd.Function(self.V)
+        self.R = fd.FunctionSpace(
+            self.mesh, "R", 0
+        )  # An R space function to deal with uniform random numbers for resampling
+        self.V = fd.FunctionSpace(self.mesh, "DG", 0)  # FE Function space
+        self.u = fd.Function(self.V)  # Solution function
+        self.dW = fd.Function(self.V)  # Brownian increment
         self.Lambda = fd.Function(self.V)
 
         # state for controls
@@ -33,9 +42,11 @@ class LSDEModel(base_model):
         # vertex only mesh for observations
         x_obs_list = [[0.2]]
         self.VOM = fd.VertexOnlyMesh(self.mesh, x_obs_list)
-        self.VVOM = fd.FunctionSpace(self.VOM, "DG", 0)
+        self.VVOM = fd.FunctionSpace(self.VOM, "DG", 0)  # Observation function space
 
     def run(self, X0, X1, s=None):
+        # X0 is the ensemble state. Length 2nsteps+1 if lambdas else nsteps+1
+        # X1 is the new ensemble state after running the model. Length 2nsteps+1 if lambdas else nsteps+1
         if not s:
             s = [1.0] * self.nsteps
         for i in range(len(X0)):
