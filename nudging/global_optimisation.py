@@ -2,7 +2,11 @@ import firedrake as fd
 from operator import mul
 from functools import reduce
 from pyadjoint.enlisting import Enlist
-from firedrake.petsc import PETSc, OptionsManager, flatten_parameters
+from firedrake.petsc import PETSc
+try:
+    from firedrake.petsc import OptionsManager, flatten_parameters
+except ImportError:  # moved to petsctools in newer Firedrake
+    from petsctools import OptionsManager, flatten_parameters
 import firedrake.adjoint as fadj
 import logging
 
