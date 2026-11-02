@@ -9,18 +9,49 @@ print = PETSc.Sys.Print
 class Euler_mixSD(base_model):
     def __init__(self, n_xy_pts, nsteps, dt,
                  noise_scale, mesh=False,
-                 salt=False, lambdas=False, seed=123450):
+                 salt=False, lambdas=False, seed=123450,
+                 noise_type='additive', r=0.01, forcing_amp=0.1,
+                 solver_parameters=None, noise_source='matern'):
+        # noise_type: 'additive' (default, as before), 'none', 'salt'
+        # or 'sflt' (noise in the transported vorticity, energy preserving,
+        # Holm and Hu 2021)
+        # old scripts pass salt=True/False; salt=True means SALT noise
+        # noise_source (only for 'salt' and 'sflt'): 'matern' (default, dU_2 is
+        # computed from dW with the Matern solves) or 'external' (dU_2 is set
+        # in run() from the list self.noise_fields, one CG1 function per step,
+        # given by the user; X[1], .., X[nsteps] are then not used)
+        if salt:
+            noise_type = 'salt'
+        if noise_type not in ('none', 'salt', 'additive', 'sflt'):
+            raise ValueError("unknown noise_type " + str(noise_type))
+        if noise_source not in ('matern', 'external'):
+            raise ValueError("unknown noise_source " + str(noise_source))
+        if noise_source == 'external' and noise_type not in ('salt', 'sflt'):
+            raise ValueError("noise_source 'external' needs noise_type "
+                             "'salt' or 'sflt'")
+        self.noise_source = noise_source
+        self.noise_fields = None
         self.n = n_xy_pts
         self.nsteps = nsteps
         self.dt = dt
         self.noise_scale = noise_scale
         self.mesh = mesh
-        self.salt = salt
+        self.noise_type = noise_type
+        # self.salt is kept because setup() still uses it
+        if noise_type == 'salt':
+            self.salt = True
+        else:
+            self.salt = False
         self.lambdas = lambdas
         self.seed = seed
+        self.r = r
+        self.forcing_amp = forcing_amp
+        # extra PETSc options for the timestepping solver; they are merged
+        # into (and override) the default ksponly options sp_EX in setup()
+        self.solver_parameters = solver_parameters
 
     def setup(self, comm=MPI.COMM_WORLD):
-        r = 0.01
+        r = self.r
         self.Lx = 1.0  # Zonal length
         self.Ly = 1.0  # Meridonal length
         if not self.mesh:
@@ -53,6 +84,9 @@ class Euler_mixSD(base_model):
                  #"snes_ksp_ew": None,
                  "snes_type":"ksponly"
                  }
+        # options given by the user override the defaults above
+        if self.solver_parameters is not None:
+            sp_EX.update(self.solver_parameters)
 
         # Setup noise term using Matern formula
         self.Vcg = fd.FunctionSpace(self.mesh, "CG", 1)  # Streamfunctions
@@ -103,6 +137,25 @@ class Euler_mixSD(base_model):
         self.qpsi0 = fd.Function(self.V_mix)    # n time
         self.q0, self.psi0 = fd.split(self.qpsi0)
 
+        # solver for psi0 from q0: laplace(psi0) = q0, psi0 = 0 on boundary
+        # (same weak form as the psi equation in F below)
+        self.q0_fn, self.psi0_fn = self.qpsi0.subfunctions
+        # solved into a plain CG1 function psi0_tmp and then copied into the
+        # state: the boundary condition cannot be applied directly to a
+        # sub-function of the mixed function
+        self.psi0_tmp = fd.Function(Vcg)
+        psi_trial = fd.TrialFunction(Vcg)
+        psi_test = fd.TestFunction(Vcg)
+        a_psi0 = fd.inner(fd.grad(psi_trial), fd.grad(psi_test))*dx
+        L_psi0 = -self.q0_fn*psi_test*dx
+        bc_psi0 = fd.DirichletBC(Vcg, 0, "on_boundary")
+        psi0_prob = fd.LinearVariationalProblem(a_psi0, L_psi0, self.psi0_tmp,
+                                                bcs=bc_psi0)
+        sp_psi0 = {"ksp_type": "preonly", "pc_type": "lu",
+                   "pc_factor_mat_solver_type": "mumps"}
+        self.psi0_solver = fd.LinearVariationalSolver(
+            psi0_prob, solver_parameters=sp_psi0)
+
         self.qpsi1 = fd.Function(self.V_mix)    # n+1 time
         self.q1, self.psi1 = fd.split(self.qpsi1)
 
@@ -133,7 +186,7 @@ class Euler_mixSD(base_model):
 
         # source term
         Q = fd.Function(Vdg)
-        Q.interpolate(0.1*fd.sin(8*fd.pi*x[0]))
+        Q.interpolate(self.forcing_amp*fd.sin(8*fd.pi*x[0]))
 
         F = (self.q1-self.q0)*p*dx + Dt*p*(r*qh-Q)*dx\
             + Dt*(fd.dot(fd.grad(p), -qh*gradperp(psi_mod)))*dx\
@@ -141,8 +194,13 @@ class Euler_mixSD(base_model):
             + (fd.inner(fd.grad(self.psi1), fd.grad(phi)))*dx\
             + self.q1*phi*dx\
             #+ self.psi1*phi*dx no need to add this term
-        if not self.salt:
+        if self.noise_type == 'additive':
             F += self.noise_scale*p*self.dW*Dt**0.5*dx
+        # SFLT noise: + J(psi, theta) dW with theta = dU_2 (CG1), J(a, b) =
+        # gradperp(a).grad(b); psi is the midpoint psih, psi_mod = psih here
+        if self.noise_type == 'sflt':
+            F += self.noise_scale*Dt**0.5*p*fd.dot(gradperp(psih),
+                                                   fd.grad(self.dU_2))*dx
 
         # timestepping solver
         qphi_prob = fd.NonlinearVariationalProblem(F, self.qpsi1, bcs=bc)
@@ -170,21 +228,29 @@ class Euler_mixSD(base_model):
 
         self.qpsi0.assign(self.X[0])
 
+        # make psi0 consistent with q0 (like msolve in the CH model)
+        self.psi0_solver.solve()
+        self.psi0_fn.interpolate(self.psi0_tmp)
+
         if self.lambdas:
             self.Lambda.assign(0.)
         for step in range(self.nsteps):
-            # setup the noise and lambda term
-            self.dW.assign(self.X[step+1])
-            if self.lambdas:
-                self.Lambda.assign(self.Lambda + self.X[self.nsteps+step+1])
-                self.dW.assign(self.X[step+1] + self.dt**0.5*self.Lambda)
-            else:
+            if self.noise_source == 'external':
+                # dU_2 is given by the user for this step
+                self.dU_2.assign(self.noise_fields[step])
+            elif self.noise_type != 'none':
+                # setup the noise and lambda term
                 self.dW.assign(self.X[step+1])
-                #self.dW += self.Lambda*(self.dt)**0.5
-            # solve  dW --> dU0 --> dU1 --> dU3
-            self.wsolver1.solve()
-            self.wsolver2.solve()
-            self.wsolver3.solve()
+                if self.lambdas:
+                    self.Lambda.assign(self.Lambda + self.X[self.nsteps+step+1])
+                    self.dW.assign(self.X[step+1] + self.dt**0.5*self.Lambda)
+                else:
+                    self.dW.assign(self.X[step+1])
+                    #self.dW += self.Lambda*(self.dt)**0.5
+                # solve  dW --> dU0 --> dU1 --> dU3
+                self.wsolver1.solve()
+                self.wsolver2.solve()
+                self.wsolver3.solve()
             # advance in time
             self.qphi_solver.solve()
             # copy output to input
