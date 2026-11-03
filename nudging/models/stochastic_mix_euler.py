@@ -11,7 +11,8 @@ class Euler_mixSD(base_model):
                  noise_scale, mesh=False,
                  salt=False, lambdas=False, seed=123450,
                  noise_type='additive', r=0.01, forcing_amp=0.1,
-                 solver_parameters=None, noise_source='matern'):
+                 solver_parameters=None, noise_source='matern',
+                 q_source=False, nu=0.0):
         # noise_type: 'additive' (default, as before), 'none', 'salt'
         # or 'sflt' (noise in the transported vorticity, energy preserving,
         # Holm and Hu 2021)
@@ -20,6 +21,10 @@ class Euler_mixSD(base_model):
         # computed from dW with the Matern solves) or 'external' (dU_2 is set
         # in run() from the list self.noise_fields, one CG1 function per step,
         # given by the user; X[1], .., X[nsteps] are then not used)
+        # q_source: if True, the CG1 function self.q_source_fn (zero unless
+        # set by the user) is added to q at every step, q1 = q0 + .. + q_source_fn
+        # nu: diffusion nu*laplace(q) of the PV, symmetric interior penalty
+        # (DQ1), no flux through the walls; 0 (default) means no diffusion
         if salt:
             noise_type = 'salt'
         if noise_type not in ('none', 'salt', 'additive', 'sflt'):
@@ -46,6 +51,8 @@ class Euler_mixSD(base_model):
         self.seed = seed
         self.r = r
         self.forcing_amp = forcing_amp
+        self.q_source = q_source
+        self.nu = nu
         # extra PETSc options for the timestepping solver; they are merged
         # into (and override) the default ksponly options sp_EX in setup()
         self.solver_parameters = solver_parameters
@@ -201,6 +208,21 @@ class Euler_mixSD(base_model):
         if self.noise_type == 'sflt':
             F += self.noise_scale*Dt**0.5*p*fd.dot(gradperp(psih),
                                                    fd.grad(self.dU_2))*dx
+        # given increment of q per step
+        self.q_source_fn = fd.Function(Vcg)
+        if self.q_source:
+            F -= p*self.q_source_fn*dx
+        # diffusion of q at the midpoint, symmetric interior penalty;
+        # natural (no flux) condition at the walls
+        if self.nu > 0:
+            sigma = 10.0
+            h = fd.CellDiameter(self.mesh)
+            h_avg = 0.5*(h("+") + h("-"))
+            F += Dt*self.nu*(fd.inner(fd.grad(qh), fd.grad(p))*dx
+                             - fd.inner(fd.avg(fd.grad(qh)), fd.jump(p, n_F))*dS
+                             - fd.inner(fd.jump(qh, n_F), fd.avg(fd.grad(p)))*dS
+                             + (sigma/h_avg)*fd.inner(fd.jump(qh, n_F),
+                                                      fd.jump(p, n_F))*dS)
 
         # timestepping solver
         qphi_prob = fd.NonlinearVariationalProblem(F, self.qpsi1, bcs=bc)
